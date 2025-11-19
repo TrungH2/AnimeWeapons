@@ -80,7 +80,9 @@ local function FindEnemiesInRange(range)
             for _, player in pairs(Players:GetPlayers()) do
                 if player.Character == obj then isPlayer = true; break end
             end
-            if not isPlayer and obj.Humanoid.Health > 0 then
+            -- Bỏ qua NPC: chỉ target enemy (không phải player, không phải NPC)
+            local isNPC = obj.Name:lower():find("npc")
+            if not isPlayer and not isNPC and obj.Humanoid.Health > 0 then
                 local distance = (playerPos - obj.Head.Position).Magnitude
                 if distance <= (range or 100) then
                     table.insert(enemies, {
@@ -117,18 +119,16 @@ local function AutoAttackLogic()
     end
 end
 
--- FIXED: FarmSelectedLogic - tự động target TẤT CẢ con enemy có TÊN đã chọn
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
-    
+
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-    
+
     local enemies = FindEnemiesInRange(100)
     local targetEnemy = nil
     local nearestDistance = math.huge
-    
-    -- Tìm enemy gần nhất có TÊN nằm trong danh sách chọn
+
     for _, enemy in ipairs(enemies) do
         for _, selectedName in ipairs(selectedEnemyNames) do
             if enemy.Name == selectedName then
@@ -139,7 +139,7 @@ local function FarmSelectedLogic()
             end
         end
     end
-    
+
     if targetEnemy then
         character.HumanoidRootPart.CFrame = CFrame.new(targetEnemy.Position + Vector3.new(0,2,0))
         local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
@@ -533,21 +533,19 @@ autoDropsToggle.Parent = mainContent
 -- FARM TAB
 local farmContent = tabFrames["🌾 FARM"]
 
--- FIXED: Nút Select Enemies - lưu TÊN thay vì vị trí
 local selectEnemyBtn = CreateActionButton("Select Enemies to Farm", "Chọn loại enemy để farm", function()
     local enemies = RefreshEnemiesList()
     local items = {}
     for _, enemy in ipairs(enemies) do 
         table.insert(items, enemy.Name) 
     end
-    
+
     if #items == 0 then
         print("❌ Không tìm thấy enemy nào gần đó!")
         return
     end
-    
+
     local combo = CreateComboBox("Enemy List", "Chọn enemy để farm (lưu tên)", items, function(selected)
-        -- Kiểm tra xem đã chọn chưa
         local found = false
         for _, name in ipairs(selectedEnemyNames) do
             if name == selected then found = true; break end
@@ -563,14 +561,12 @@ local selectEnemyBtn = CreateActionButton("Select Enemies to Farm", "Chọn lo�
 end)
 selectEnemyBtn.Parent = farmContent
 
--- Nút xóa danh sách farm
 local clearFarmBtn = CreateActionButton("Clear Farm List", "Xóa danh sách enemy được chọn", function()
     selectedEnemyNames = {}
     print("🗑️ Cleared farm list!")
 end)
 clearFarmBtn.Parent = farmContent
 
--- Nút show danh sách farm hiện tại
 local showFarmBtn = CreateActionButton("Show Selected List", "Xem danh sách enemy đang farm", function()
     if #selectedEnemyNames == 0 then
         print("📭 Farm list is empty!")
@@ -583,9 +579,87 @@ local showFarmBtn = CreateActionButton("Show Selected List", "Xem danh sách ene
 end)
 showFarmBtn.Parent = farmContent
 
-local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh sách kẻ địch", function()
+local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh sách kẻ địch và tự động target tất cả enemy đã chọn", function()
+    -- Xóa các frame enemy cũ trong farmContent (trừ các nút chính)
+    for _, child in pairs(farmContent:GetChildren()) do
+        if child:IsA("Frame") and child ~= refreshBtn and child ~= selectEnemyBtn and child ~= clearFarmBtn and child ~= showFarmBtn then
+            child:Destroy()
+        end
+    end
+
     local enemies = RefreshEnemiesList()
     print("🔄 Found " .. #enemies .. " enemies!")
+
+    -- Tự động target tất cả enemy có tên trong selectedEnemyNames
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        for _, enemy in ipairs(enemies) do
+            for _, selectedName in ipairs(selectedEnemyNames) do
+                if enemy.Name == selectedName then
+                    character.HumanoidRootPart.CFrame = CFrame.new(enemy.Position + Vector3.new(0,2,0))
+                    local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+                    if remote then SafeFire(remote, "Attack", enemy.Model) end
+                    print("⚔️ Targeted: " .. enemy.Name)
+                end
+            end
+        end
+    end
+
+    -- Hiển thị danh sách enemy để chọn thêm vào farm list
+    for _, enemy in ipairs(enemies) do
+        local infoFrame = Instance.new("Frame")
+        infoFrame.Size = UDim2.new(1, 0, 0, 40)
+        infoFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 150)
+        infoFrame.Parent = farmContent
+
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Size = UDim2.new(0.6, 0, 1, 0)
+        nameLabel.Position = UDim2.new(0, 10, 0, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = "👹 " .. enemy.Name .. " | HP: " .. math.floor(enemy.Health)
+        nameLabel.TextColor3 = Color3.fromRGB(40, 40, 20)
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextSize = 12
+        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        nameLabel.Parent = infoFrame
+
+        local selectBtn = Instance.new("TextButton")
+        selectBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
+        selectBtn.Position = UDim2.new(0.7, 0, 0.15, 0)
+        selectBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
+        selectBtn.Text = "🎯 SELECT"
+        selectBtn.TextColor3 = Color3.fromRGB(40, 40, 20)
+        selectBtn.Font = Enum.Font.GothamBold
+        selectBtn.TextSize = 11
+        selectBtn.Parent = infoFrame
+
+        local isSelected = false
+        selectBtn.MouseButton1Click:Connect(function()
+            isSelected = not isSelected
+            if isSelected then
+                selectBtn.BackgroundColor3 = Color3.fromRGB(180, 220, 40)
+                selectBtn.Text = "✅ SELECTED"
+                local found = false
+                for _, name in ipairs(selectedEnemyNames) do
+                    if name == enemy.Name then found = true; break end
+                end
+                if not found then
+                    table.insert(selectedEnemyNames, enemy.Name)
+                    print("✅ Added to farm list: " .. enemy.Name)
+                end
+            else
+                selectBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
+                selectBtn.Text = "🎯 SELECT"
+                for i, name in ipairs(selectedEnemyNames) do
+                    if name == enemy.Name then
+                        table.remove(selectedEnemyNames, i)
+                        print("❌ Removed from farm list: " .. enemy.Name)
+                        break
+                    end
+                end
+            end
+        end)
+    end
 end)
 refreshBtn.Parent = farmContent
 
@@ -674,17 +748,17 @@ local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại 
     end
     local enemies = RefreshEnemiesList()
     print("🔍 Found " .. #enemies .. " enemies!")
-    
+
     for _, enemy in ipairs(enemies) do
         local infoFrame = Instance.new("Frame")
         infoFrame.Size = UDim2.new(1, 0, 0, 60)
         infoFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 150)
         infoFrame.Parent = enemiesContent
-        
+
         local cornerRadius = Instance.new("UICorner")
         cornerRadius.CornerRadius = UDim.new(0, 6)
         cornerRadius.Parent = infoFrame
-        
+
         local nameLabel = Instance.new("TextLabel")
         nameLabel.Size = UDim2.new(0.7, 0, 0.5, 0)
         nameLabel.Position = UDim2.new(0, 10, 0, 5)
@@ -695,7 +769,7 @@ local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại 
         nameLabel.TextSize = 12
         nameLabel.TextXAlignment = Enum.TextXAlignment.Left
         nameLabel.Parent = infoFrame
-        
+
         local distLabel = Instance.new("TextLabel")
         distLabel.Size = UDim2.new(0.7, 0, 0.5, 0)
         distLabel.Position = UDim2.new(0, 10, 0.5, 0)
@@ -706,7 +780,7 @@ local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại 
         distLabel.TextSize = 11
         distLabel.TextXAlignment = Enum.TextXAlignment.Left
         distLabel.Parent = infoFrame
-        
+
         local selectBtn = Instance.new("TextButton")
         selectBtn.Size = UDim2.new(0.25, 0, 0.6, 0)
         selectBtn.Position = UDim2.new(0.72, 0, 0.2, 0)
@@ -716,11 +790,11 @@ local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại 
         selectBtn.Font = Enum.Font.GothamBold
         selectBtn.TextSize = 11
         selectBtn.Parent = infoFrame
-        
+
         local selectCorner = Instance.new("UICorner")
         selectCorner.CornerRadius = UDim.new(0, 4)
         selectCorner.Parent = selectBtn
-        
+
         local isSelected = false
         selectBtn.MouseButton1Click:Connect(function()
             isSelected = not isSelected
