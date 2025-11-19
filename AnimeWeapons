@@ -1,4 +1,4 @@
--- Himono Hub v4.2 - SULFUR EDITION (ADVANCED OPTIMIZED & SECURE)
+-- Himono Hub v4.2 - SULFUR EDITION (Màu lưu huỳnh, đầy đủ chức năng)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -9,59 +9,32 @@ local LocalPlayer = Players.LocalPlayer
 local stealthMode = true
 local safeConnections = {}
 local activeLoops = {}
-local selectedEnemyNames = {}
+local selectedEnemyNames = {} -- Thay đổi: lưu TÊN thay vì vị trí
 local selectedGachaType = "Biju"
 local selectedZone = "Zone 1"
 local selectedStat = "Attack"
 local autoOpenEggEnabled = false
 
--- Cache cho remote events
-local cachedRemotes = {}
-local lastCacheTime = 0
-local CACHE_DURATION = 5
-
--- Cache cho enemy list (Giảm GetDescendants gọi)
-local enemyCache = {}
-local lastEnemyCacheTime = 0
-local ENEMY_CACHE_DURATION = 1
-
--- Cache cho items/drops
-local dropsCache = {}
-local lastDropsCacheTime = 0
-local DROPS_CACHE_DURATION = 2
-
--- Improved delay system với ngẫu nhiên tốt hơn
-local function GenerateRandomDelay(minMs, maxMs)
-    local min = math.floor(minMs)
-    local max = math.floor(maxMs)
-    return (math.random(min, max) + math.random()) / 1000
-end
-
+-- Safe remote fire
 local function SafeFire(remote, ...)
-    if not remote then return end
-    if stealthMode then 
-        local delay = GenerateRandomDelay(80, 350)
-        task.wait(delay)
-    end
+    if stealthMode then RunService.Heartbeat:Wait() end
     remote:FireServer(...)
 end
 
 local function SafeWait()
-    if not stealthMode then task.wait(0.1); return end
-    local delay = GenerateRandomDelay(40, 180)
-    task.wait(delay)
+    if not stealthMode then task.wait(); return end
+    math.randomseed(tick())
+    local delay = math.random(20, 50) / 100
+    local start = tick()
+    while tick() - start < delay do RunService.Heartbeat:Wait() end
 end
 
 local function SafeCall(func, ...)
     local success, result = pcall(func, ...)
-    if not success then
-        warn("⚠️ Error in SafeCall: " .. tostring(result))
-    end
     return success and result or nil
 end
 
 local function SafeConnect(signal, callback)
-    if not signal then return nil end
     local conn = signal:Connect(function(...)
         if stealthMode then SafeWait() end
         SafeCall(callback, ...)
@@ -85,29 +58,6 @@ local function StopLoop(name)
     if activeLoops[name] then activeLoops[name] = false end
 end
 
--- OPTIMIZED: Cache remote events
-local function GetRemote(path)
-    local currentTime = tick()
-    if currentTime - lastCacheTime > CACHE_DURATION then
-        cachedRemotes = {}
-        lastCacheTime = currentTime
-    end
-    
-    if cachedRemotes[path] then return cachedRemotes[path] end
-    
-    local remote = nil
-    
-    if path == "Attack" then
-        remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-    elseif path == "Gacha" then
-        local reply = ReplicatedStorage:FindFirstChild("Reply")
-        if reply then remote = reply:FindFirstChild("Reliable") end
-    end
-    
-    if remote then cachedRemotes[path] = remote end
-    return remote
-end
-
 local antiAFKConnection
 local function EnableAntiAFK()
     if antiAFKConnection then antiAFKConnection:Disconnect() end
@@ -119,88 +69,34 @@ local function EnableAntiAFK()
     end)
 end
 
--- OPTIMIZED: Enemy detection with better caching
 local function FindEnemiesInRange(range)
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return {} end
-    
-    local currentTime = tick()
-    if currentTime - lastEnemyCacheTime > ENEMY_CACHE_DURATION then
-        enemyCache = {}
-        local playerPos = character.HumanoidRootPart.Position
-        
-        local enemyFolder = workspace:FindFirstChild("Enemies") or workspace:FindFirstChild("NPCs") or workspace
-        local descendants = enemyFolder:GetDescendants()
-        
-        for _, obj in ipairs(descendants) do
-            if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("Head") then
-                local isPlayer = false
-                for _, player in ipairs(Players:GetPlayers()) do
-                    if player.Character == obj then isPlayer = true; break end
-                end
-                
-                if not isPlayer and obj.Humanoid.Health > 0 then
-                    local distance = (playerPos - obj.Head.Position).Magnitude
-                    if distance <= (range or 100) then
-                        table.insert(enemyCache, {
-                            Model = obj,
-                            Name = obj.Name,
-                            Position = obj.Head.Position,
-                            Distance = distance,
-                            Health = obj.Humanoid.Health,
-                            MaxHealth = obj.Humanoid.MaxHealth
-                        })
-                    end
+    local enemies = {}
+    local playerPos = character.HumanoidRootPart.Position
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("Head") then
+            local isPlayer = false
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character == obj then isPlayer = true; break end
+            end
+            if not isPlayer and obj.Humanoid.Health > 0 then
+                local distance = (playerPos - obj.Head.Position).Magnitude
+                if distance <= (range or 100) then
+                    table.insert(enemies, {
+                        Model = obj,
+                        Name = obj.Name,
+                        Position = obj.Head.Position,
+                        Distance = distance,
+                        Health = obj.Humanoid.Health,
+                        MaxHealth = obj.Humanoid.MaxHealth
+                    })
                 end
             end
         end
-        
-        table.sort(enemyCache, function(a, b) return a.Distance < b.Distance end)
-        lastEnemyCacheTime = currentTime
     end
-    
-    return enemyCache
-end
-
--- OPTIMIZED: Items/Drops detection with cache
-local function FindDropsInRange(range)
-    local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return {} end
-    
-    local currentTime = tick()
-    if currentTime - lastDropsCacheTime > DROPS_CACHE_DURATION then
-        dropsCache = {}
-        local playerPos = character.HumanoidRootPart.Position
-        
-        -- Improved: Chỉ quét trong khu vực gần (spatial optimization)
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("Part") or obj:IsA("Model") then
-                local isValid = false
-                if obj:IsA("Part") then
-                    isValid = obj.Name:lower():find("drop") or obj.Name:lower():find("coin") or obj.Name:lower():find("reward")
-                elseif obj:IsA("Model") then
-                    isValid = obj.Name:lower():find("drop") or obj.Name:lower():find("coin") or obj.Name:lower():find("reward")
-                end
-                
-                if isValid then
-                    local distance = (playerPos - obj.Position).Magnitude
-                    if distance <= (range or 50) then
-                        table.insert(dropsCache, {
-                            Object = obj,
-                            Name = obj.Name,
-                            Position = obj.Position,
-                            Distance = distance
-                        })
-                    end
-                end
-            end
-        end
-        
-        table.sort(dropsCache, function(a, b) return a.Distance < b.Distance end)
-        lastDropsCacheTime = currentTime
-    end
-    
-    return dropsCache
+    table.sort(enemies, function(a, b) return a.Distance < b.Distance end)
+    return enemies
 end
 
 local function RefreshEnemiesList()
@@ -215,12 +111,13 @@ local function AutoAttackLogic()
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + Vector3.new(0,2,0))
-            local remote = GetRemote("Attack")
+            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
             if remote then SafeFire(remote, "Attack", nearestEnemy.Model) end
         end
     end
 end
 
+-- FIXED: FarmSelectedLogic - tự động target TẤT CẢ con enemy có TÊN đã chọn
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
     
@@ -231,18 +128,21 @@ local function FarmSelectedLogic()
     local targetEnemy = nil
     local nearestDistance = math.huge
     
+    -- Tìm enemy gần nhất có TÊN nằm trong danh sách chọn
     for _, enemy in ipairs(enemies) do
         for _, selectedName in ipairs(selectedEnemyNames) do
-            if enemy.Name == selectedName and enemy.Distance < nearestDistance then
-                nearestDistance = enemy.Distance
-                targetEnemy = enemy
+            if enemy.Name == selectedName then
+                if enemy.Distance < nearestDistance then
+                    nearestDistance = enemy.Distance
+                    targetEnemy = enemy
+                end
             end
         end
     end
     
     if targetEnemy then
         character.HumanoidRootPart.CFrame = CFrame.new(targetEnemy.Position + Vector3.new(0,2,0))
-        local remote = GetRemote("Attack")
+        local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
         if remote then SafeFire(remote, "Attack", targetEnemy.Model) end
     end
 end
@@ -254,29 +154,28 @@ local function FarmRandomLogic()
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             character.HumanoidRootPart.CFrame = CFrame.new(randomEnemy.Position + Vector3.new(0,2,0))
-            local remote = GetRemote("Attack")
+            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
             if remote then SafeFire(remote, "Attack", randomEnemy.Model) end
         end
     end
 end
 
--- OPTIMIZED: AutoCollectLogic with caching
 local function AutoCollectLogic()
     local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-    
-    local drops = FindDropsInRange(30)
-    
-    for _, drop in ipairs(drops) do
-        if drop.Distance < 20 then
-            local remote = GetRemote("Attack")
-            if remote then SafeFire(remote, "Collect", drop.Object) end
+    if not character then return end
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Part") and (obj.Name:lower():find("drop") or obj.Name:lower():find("coin") or obj.Name:lower():find("reward")) then
+            local distance = (character.HumanoidRootPart.Position - obj.Position).Magnitude
+            if distance < 20 then
+                local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+                if remote then SafeFire(remote, "Collect", obj) end
+            end
         end
     end
 end
 
 local function StartGacha(gachaType)
-    local remote = GetRemote("Gacha")
+    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
     if remote then
         SafeFire(remote, "Crate Roll Start", {[1]=gachaType,[2]=true})
         task.wait(1)
@@ -285,27 +184,26 @@ local function StartGacha(gachaType)
 end
 
 local function TeleportToZone(zoneName)
-    local remote = GetRemote("Gacha")
+    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
     if remote then
         SafeFire(remote, "Zone Teleport", {[1]=zoneName})
     end
 end
 
 local function DistributeStat(statName)
-    local remote = GetRemote("Gacha")
+    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
     if remote then
         SafeFire(remote, "Distribute Stat Point", {[1]=statName})
     end
 end
 
 local function AutoOpenEggLogic()
-    local remote = GetRemote("Gacha")
+    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
     if remote then
         SafeFire(remote, "Open Star", {[1]="Egg"})
     end
 end
 
--- UI SETUP
 local HimonoHub = Instance.new("ScreenGui")
 HimonoHub.Name = "HimonoHubSulfur"
 HimonoHub.ResetOnSpawn = false
@@ -335,7 +233,7 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🟡 HIMONO HUB v4.2 - ADVANCED OPTIMIZED"
+Title.Text = "🟡 HIMONO HUB v4.2 - SULFUR EDITION"
 Title.TextColor3 = Color3.fromRGB(40, 40, 20)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 18
@@ -572,20 +470,13 @@ function CreateComboBox(text, description, items, callback)
     local selected = items[1]
     dropdown.MouseButton1Click:Connect(function()
         local menu = Instance.new("Frame")
-        menu.Size = UDim2.new(0.4, 0, 0, math.min(#items*28, 200))
+        menu.Size = UDim2.new(0.4, 0, 0, #items*28)
         menu.Position = UDim2.new(0.55, 0, 0.75, 0)
         menu.BackgroundColor3 = Color3.fromRGB(255, 255, 180)
         menu.Parent = frame
         local menuCorner = Instance.new("UICorner")
         menuCorner.CornerRadius = UDim.new(0, 6)
         menuCorner.Parent = menu
-        
-        local menuScroll = Instance.new("ScrollingFrame")
-        menuScroll.Size = UDim2.new(1, 0, 1, 0)
-        menuScroll.BackgroundTransparency = 1
-        menuScroll.CanvasSize = UDim2.new(0, 0, 0, #items*28)
-        menuScroll.Parent = menu
-        
         for i, item in ipairs(items) do
             local itemBtn = Instance.new("TextButton")
             itemBtn.Size = UDim2.new(1, 0, 0, 28)
@@ -595,7 +486,7 @@ function CreateComboBox(text, description, items, callback)
             itemBtn.TextColor3 = Color3.fromRGB(40,40,20)
             itemBtn.Font = Enum.Font.Gotham
             itemBtn.TextSize = 12
-            itemBtn.Parent = menuScroll
+            itemBtn.Parent = menu
             itemBtn.MouseButton1Click:Connect(function()
                 dropdown.Text = item
                 selected = item
@@ -613,7 +504,7 @@ local mainContent = tabFrames["🏠 MAIN"]
 local mainStatus = Instance.new("TextLabel")
 mainStatus.Size = UDim2.new(1, -20, 0, 30)
 mainStatus.BackgroundTransparency = 1
-mainStatus.Text = "🟡 Himono Hub - Advanced & Ready!"
+mainStatus.Text = "🟡 Himono Hub đã sẵn sàng!"
 mainStatus.TextColor3 = Color3.fromRGB(40,40,20)
 mainStatus.Font = Enum.Font.Gotham
 mainStatus.TextSize = 14
@@ -642,6 +533,7 @@ autoDropsToggle.Parent = mainContent
 -- FARM TAB
 local farmContent = tabFrames["🌾 FARM"]
 
+-- FIXED: Nút Select Enemies - lưu TÊN thay vì vị trí
 local selectEnemyBtn = CreateActionButton("Select Enemies to Farm", "Chọn loại enemy để farm", function()
     local enemies = RefreshEnemiesList()
     local items = {}
@@ -655,6 +547,7 @@ local selectEnemyBtn = CreateActionButton("Select Enemies to Farm", "Chọn lo�
     end
     
     local combo = CreateComboBox("Enemy List", "Chọn enemy để farm (lưu tên)", items, function(selected)
+        -- Kiểm tra xem đã chọn chưa
         local found = false
         for _, name in ipairs(selectedEnemyNames) do
             if name == selected then found = true; break end
@@ -670,12 +563,14 @@ local selectEnemyBtn = CreateActionButton("Select Enemies to Farm", "Chọn lo�
 end)
 selectEnemyBtn.Parent = farmContent
 
+-- Nút xóa danh sách farm
 local clearFarmBtn = CreateActionButton("Clear Farm List", "Xóa danh sách enemy được chọn", function()
     selectedEnemyNames = {}
     print("🗑️ Cleared farm list!")
 end)
 clearFarmBtn.Parent = farmContent
 
+-- Nút show danh sách farm hiện tại
 local showFarmBtn = CreateActionButton("Show Selected List", "Xem danh sách enemy đang farm", function()
     if #selectedEnemyNames == 0 then
         print("📭 Farm list is empty!")
@@ -689,7 +584,6 @@ end)
 showFarmBtn.Parent = farmContent
 
 local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh sách kẻ địch", function()
-    lastEnemyCacheTime = 0
     local enemies = RefreshEnemiesList()
     print("🔄 Found " .. #enemies .. " enemies!")
 end)
@@ -778,7 +672,6 @@ local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại 
     for _, child in pairs(enemiesContent:GetChildren()) do
         if child:IsA("Frame") and child ~= refreshEnemiesBtn then child:Destroy() end
     end
-    lastEnemyCacheTime = 0
     local enemies = RefreshEnemiesList()
     print("🔍 Found " .. #enemies .. " enemies!")
     
@@ -889,21 +782,11 @@ EnableAntiAFK()
 task.spawn(function()
     while true do
         for _, frame in pairs(tabFrames) do
-            if frame and frame:FindFirstChild("UIListLayout") then
-                frame.CanvasSize = UDim2.new(0, 0, 0, frame.UIListLayout.AbsoluteContentSize.Y + 20)
-            end
+            frame.CanvasSize = UDim2.new(0, 0, 0, frame.UIListLayout.AbsoluteContentSize.Y + 20)
         end
-        if TabContainer:FindFirstChild("UIListLayout") then
-            TabContainer.CanvasSize = UDim2.new(0, TabListLayout.AbsoluteContentSize.X + 20, 0, 0)
-        end
+        TabContainer.CanvasSize = UDim2.new(0, TabListLayout.AbsoluteContentSize.X + 20, 0, 0)
         task.wait(0.5)
     end
 end)
 
-print("🟡 Himono Hub v4.2 - ADVANCED OPTIMIZED LOADED!")
-print("✅ Features:")
-print("  • Enemy Caching (1 giây)")
-print("  • Drops Caching (2 giây)")
-print("  • Improved Stealth Mode (80-350ms)")
-print("  • Remote Event Caching (5 giây)")
-print("  • Better Performance & Anti-Cheat")
+print("🟡 Himono Hub v4.2 - SULFUR EDITION LOADED!")
