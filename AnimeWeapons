@@ -1,4 +1,4 @@
--- Himono Hub v4.2 - SULFUR EDITION (Màu lưu huỳnh, đầy đủ chức năng)
+-- Himono Hub v4.2 - SULFUR EDITION 
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -668,5 +668,6 @@ task.spawn(function()
         task.wait(0.5)
     end
 end)
+
 
 print("🟡 Himono Hub v4.2 - SULFUR EDITION LOADED!")
