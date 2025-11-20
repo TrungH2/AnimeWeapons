@@ -1,4 +1,4 @@
--- Himono Hub v4.2 - SULFUR EDITION (COMPLETE FIXED VERSION)
+-- Himono Hub v4.2 - PURPLE EDITION (FULLY FIXED)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -16,7 +16,7 @@ local selectedStat = "Attack"
 local autoOpenEggEnabled = false
 
 -- Config file path
-local configFile = "HimonoHubSulfurConfig.txt"
+local configFile = "HimonoHubPurpleConfig.txt"
 
 -- Safe remote fire
 local function SafeFire(remote, ...)
@@ -72,21 +72,7 @@ local function EnableAntiAFK()
     end)
 end
 
-local ignoreNPCNames = {
-    "npc", "gacha", "roll", "merchant", "shop", "vendor", "trader", "egg",
-    "crate", "box", "dealer"
-}
-
-local function IsNPC(model)
-    local modelName = model.Name:lower()
-    for _, npcName in ipairs(ignoreNPCNames) do
-        if modelName:find(npcName) then
-            return true
-        end
-    end
-    return false
-end
-
+-- SIMPLIFIED: Không lọc NPC như phiên bản vàng
 local function FindEnemiesInRange(range)
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return {} end
@@ -98,8 +84,8 @@ local function FindEnemiesInRange(range)
             for _, player in pairs(Players:GetPlayers()) do
                 if player.Character == obj then isPlayer = true; break end
             end
-            local isNPC = IsNPC(obj)
-            if not isPlayer and not isNPC and obj.Humanoid.Health > 0 then
+            -- ĐƠN GIẢN: Chỉ kiểm tra không phải player và còn máu
+            if not isPlayer and obj.Humanoid.Health > 0 then
                 local distance = (playerPos - obj.Head.Position).Magnitude
                 if distance <= (range or 100) then
                     table.insert(enemies, {
@@ -118,7 +104,11 @@ local function FindEnemiesInRange(range)
     return enemies
 end
 
--- Group enemies by name
+local function RefreshEnemiesList()
+    return FindEnemiesInRange(100)
+end
+
+-- NEW: Group enemies by name (tính năng mới)
 local function GetEnemyGroups()
     local enemies = FindEnemiesInRange(200)
     local groups = {}
@@ -128,8 +118,7 @@ local function GetEnemyGroups()
             groups[enemy.Name] = {
                 name = enemy.Name,
                 count = 0,
-                nearestDistance = math.huge,
-                models = {}
+                nearestDistance = math.huge
             }
         end
         
@@ -137,12 +126,12 @@ local function GetEnemyGroups()
         if enemy.Distance < groups[enemy.Name].nearestDistance then
             groups[enemy.Name].nearestDistance = enemy.Distance
         end
-        table.insert(groups[enemy.Name].models, enemy.Model)
     end
     
     return groups
 end
 
+-- Auto farm logic
 local function AutoAttackLogic()
     local enemies = FindEnemiesInRange(50)
     if #enemies > 0 then
@@ -156,69 +145,40 @@ local function AutoAttackLogic()
     end
 end
 
--- Faster farm selected with anti-cheat protection
+-- FIXED: Farm đơn giản như phiên bản vàng nhưng có cải tiến
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
+    
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
     
-    local enemyGroups = GetEnemyGroups()
+    local enemies = FindEnemiesInRange(100)
+    local targetEnemy = nil
+    local nearestDistance = math.huge
     
-    for _, enemyName in ipairs(selectedEnemyNames) do
-        if not activeLoops["FarmSelected"] then break end
-        
-        local group = enemyGroups[enemyName]
-        if group and group.count > 0 then
-            -- Find nearest enemy in this group
-            local nearestEnemy = nil
-            local minDistance = math.huge
-            
-            for _, model in ipairs(group.models) do
-                if model and model:FindFirstChild("Humanoid") and model.Humanoid.Health > 0 then
-                    local distance = (character.HumanoidRootPart.Position - model.Head.Position).Magnitude
-                    if distance < minDistance then
-                        minDistance = distance
-                        nearestEnemy = model
-                    end
-                end
-            end
-            
-            if nearestEnemy then
-                -- Fast teleport with small random offset to avoid anti-cheat
-                local offset = Vector3.new(
-                    math.random(-2, 2),
-                    3,
-                    math.random(-2, 2)
-                )
-                character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Head.Position + offset)
-                
-                local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-                if remote then
-                    -- Quick attack burst
-                    for i = 1, 3 do
-                        if activeLoops["FarmSelected"] and nearestEnemy and nearestEnemy:FindFirstChild("Humanoid") and nearestEnemy.Humanoid.Health > 0 then
-                            SafeFire(remote, "Attack", nearestEnemy)
-                            task.wait(0.1)
-                        else
-                            break
-                        end
-                    end
+    -- Tìm enemy gần nhất có TÊN nằm trong danh sách chọn
+    for _, enemy in ipairs(enemies) do
+        for _, selectedName in ipairs(selectedEnemyNames) do
+            if enemy.Name == selectedName then
+                if enemy.Distance < nearestDistance then
+                    nearestDistance = enemy.Distance
+                    targetEnemy = enemy
                 end
             end
         end
+    end
+    
+    if targetEnemy then
+        character.HumanoidRootPart.CFrame = CFrame.new(targetEnemy.Position + Vector3.new(0,2,0))
+        local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+        if remote then SafeFire(remote, "Attack", targetEnemy.Model) end
     end
 end
 
 local function FarmRandomLogic()
     local enemies = FindEnemiesInRange(50)
-    local validEnemies = {}
-    for _, enemy in ipairs(enemies) do
-        if not IsNPC(enemy.Model) then
-            table.insert(validEnemies, enemy)
-        end
-    end
-    if #validEnemies > 0 then
-        local randomEnemy = validEnemies[math.random(1, #validEnemies)]
+    if #enemies > 0 then
+        local randomEnemy = enemies[math.random(1, #enemies)]
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             character.HumanoidRootPart.CFrame = CFrame.new(randomEnemy.Position + Vector3.new(0,2,0))
@@ -265,11 +225,12 @@ local function DistributeStat(statName)
     end
 end
 
+-- FIXED: Auto Open Egg với logic kiểm tra khoảng cách
 local function AutoOpenEggLogic()
     local character = LocalPlayer.Character
-    if not character then return end
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
     
-    -- Only open egg if near one
+    -- Chỉ mở egg khi gần (15m)
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and (obj.Name:lower():find("egg") or obj.Name:lower():find("crate")) then
             local distance = (character.HumanoidRootPart.Position - obj:GetPivot().Position).Magnitude
@@ -284,7 +245,7 @@ local function AutoOpenEggLogic()
     end
 end
 
--- SAVE/LOAD CONFIG
+-- FIXED: Thêm hàm Save/Load Config
 local function SaveConfig()
     local data = {
         selectedEnemyNames = selectedEnemyNames,
@@ -321,9 +282,9 @@ local function DeleteConfig()
     end
 end
 
--- GUI Creation with PURPLE theme
+-- GUI Creation với màu TÍM
 local HimonoHub = Instance.new("ScreenGui")
-HimonoHub.Name = "HimonoHubSulfur"
+HimonoHub.Name = "HimonoHubPurple"
 HimonoHub.ResetOnSpawn = false
 HimonoHub.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 HimonoHub.Parent = game.CoreGui
@@ -331,7 +292,7 @@ HimonoHub.Parent = game.CoreGui
 local MainContainer = Instance.new("Frame")
 MainContainer.Size = UDim2.new(0, 600, 0, 500)
 MainContainer.Position = UDim2.new(0.5, -300, 0.5, -250)
-MainContainer.BackgroundColor3 = Color3.fromRGB(120, 0, 200)
+MainContainer.BackgroundColor3 = Color3.fromRGB(120, 0, 200) -- Purple
 MainContainer.BorderSizePixel = 0
 MainContainer.Parent = HimonoHub
 
@@ -341,7 +302,7 @@ ContainerCorner.Parent = MainContainer
 
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 45)
-TitleBar.BackgroundColor3 = Color3.fromRGB(80, 0, 160)
+TitleBar.BackgroundColor3 = Color3.fromRGB(80, 0, 160) -- Dark Purple
 TitleBar.Parent = MainContainer
 
 local TitleCorner = Instance.new("UICorner")
@@ -394,7 +355,7 @@ TabListLayout.Parent = TabContainer
 local ContentContainer = Instance.new("Frame")
 ContentContainer.Size = UDim2.new(1, -20, 1, -120)
 ContentContainer.Position = UDim2.new(0, 10, 0, 105)
-ContentContainer.BackgroundColor3 = Color3.fromRGB(200, 150, 255)
+ContentContainer.BackgroundColor3 = Color3.fromRGB(200, 150, 255) -- Light Purple
 ContentContainer.Parent = MainContainer
 
 local ContentCorner = Instance.new("UICorner")
@@ -413,6 +374,7 @@ local ContentLayout = Instance.new("UIListLayout")
 ContentLayout.Padding = UDim.new(0, 15)
 ContentLayout.Parent = ContentScroll
 
+-- UPDATED: Chỉ giữ các tab chính
 local tabs = {
     "🏠 MAIN", "🌾 FARM", "🎰 GACHA", "⚡ STATS", 
     "🚀 TELEPORT", "🥚 OPEN EGG", "⚙️ SETTINGS"
@@ -633,12 +595,12 @@ local autoAttackToggle = CreateToggleSwitch("Enable Auto Attack", "Tự động 
 end)
 autoAttackToggle.Parent = mainContent
 
-local autoFarmSelectedToggle = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên (FAST)", false, function(enabled)
-    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.3) else StopLoop("FarmSelected") end
+local autoFarmSelectedToggle = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên", false, function(enabled)
+    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.5) else StopLoop("FarmSelected") end
 end)
 autoFarmSelectedToggle.Parent = mainContent
 
-local autoFarmRandomToggle = CreateToggleSwitch("Enable Farm Random Enemies", "Tự động farm ngẫu nhiên (KHÔNG target NPC)", false, function(enabled)
+local autoFarmRandomToggle = CreateToggleSwitch("Enable Farm Random Enemies", "Tự động farm ngẫu nhiên", false, function(enabled)
     if enabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) else StopLoop("FarmRandom") end
 end)
 autoFarmRandomToggle.Parent = mainContent
@@ -651,7 +613,7 @@ autoDropsToggle.Parent = mainContent
 -- FARM TAB
 local farmContent = tabFrames["🌾 FARM"]
 
--- Refresh enemy groups display
+-- NEW: Refresh enemy groups display
 local refreshGroupsBtn = CreateActionButton("Refresh Enemy Groups", "Quét và hiển thị enemy theo nhóm", function()
     for _, child in pairs(farmContent:GetChildren()) do
         if child:IsA("Frame") and string.find(child.Name or "", "GroupFrame") then
@@ -815,6 +777,7 @@ local openEggBtn = CreateActionButton("Open Egg", "Mở egg gần bạn", functi
 end)
 openEggBtn.Parent = eggContent
 
+-- FIXED: Auto Open Egg với logic kiểm tra khoảng cách
 local autoOpenEggToggle = CreateToggleSwitch("Enable Auto Open Egg", "Tự động mở egg khi gần (15m)", false, function(enabled)
     autoOpenEggEnabled = enabled
     if enabled then
@@ -840,7 +803,7 @@ local stealthToggle = CreateToggleSwitch("Enable Stealth Mode", "Ẩn hoạt đ�
 end)
 stealthToggle.Parent = settingsContent
 
--- Config buttons in SETTINGS tab
+-- FIXED: Thêm nút Config vào SETTINGS
 local saveConfigBtn = CreateActionButton("Save Config", "Lưu lại cấu hình hiện tại", function()
     SaveConfig()
     mainStatus.Text = "💾 Đã lưu cấu hình!"
@@ -850,6 +813,7 @@ saveConfigBtn.Parent = settingsContent
 local loadConfigBtn = CreateActionButton("Load Config", "Tải lại cấu hình đã lưu", function()
     LoadConfig()
     mainStatus.Text = "📂 Đã tải cấu hình!"
+    -- Refresh farm display
     if farmContent.Visible then
         refreshGroupsBtn.MouseButton1Click:Fire()
     end
@@ -901,6 +865,6 @@ end)
 
 -- Initialize
 EnableAntiAFK()
-LoadConfig()
+LoadConfig() -- Tự động load config khi khởi chạy
 
 print("🟣 Himono Hub v4.2 - PURPLE EDITION LOADED!")
