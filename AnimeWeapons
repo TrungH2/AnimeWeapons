@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
 -- ===================================================================
--- I. CONFIGURATION
+-- I. CONFIGURATION (Max Speed & Tối ưu)
 -- ===================================================================
 
 local Config = {
@@ -17,10 +17,10 @@ local Config = {
     DungeonJoinInterval = 15,
     TeleportCooldown = 2,
     MaxCollectPerFrame = 10,
-    FarmInterval = 0.1,
+    FarmInterval = 0.1, -- MAX SPEED
     RemotePatterns = {
         Reply = {"Reply"},
-        Attack = {"RemoteEvent", "Remote"}
+        Attack = {"RemoteEvent", "Remote"} -- Sử dụng tên remote chung
     },
     Zones = {
         ["Shinobi Village"] = "Naruto",
@@ -49,7 +49,7 @@ table.sort(sortedZoneKeys)
 local stealthMode = Config.StealthMode
 local safeConnections = {}
 local activeLoops = {}
-local selectedEnemyPositions = {}
+local selectedEnemyNames = {} -- **ĐÃ CHUYỂN VỀ DÙNG NAME**
 local selectedGachaType = Config.GachaTypes[1] or "Biju"
 local selectedStat = Config.StatTypes[1] or "Damage"
 local selectedZone = sortedZoneKeys[1] or "Zone 1"
@@ -77,12 +77,9 @@ local function GetReplyRemote()
     return nil
 end
 
+-- Dùng remote chung cho Attack/Collect như code cũ
 local function GetAttackRemote()
-    for _, name in ipairs(Config.RemotePatterns.Attack) do
-        local remote = ReplicatedStorage:FindFirstChild(name)
-        if remote then return remote end
-    end
-    return nil
+    return ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
 end
 
 local function SafeFire(remote, ...)
@@ -152,7 +149,7 @@ local function RestoreFarmLoops()
 end
 
 -- ===================================================================
--- IV. GAME LOGIC IMPLEMENTATION
+-- IV. GAME LOGIC IMPLEMENTATION (Fixed Logic)
 -- ===================================================================
 
 local function ValidatePlayerState()
@@ -234,6 +231,60 @@ local function RefreshEnemiesList()
     return FindEnemiesInRange(500)
 end
 
+-- NEW: FarmSelected Logic (Dựa trên Name & Burst Attack)
+local function FarmSelectedLogic()
+    if isDungeonActive or not ValidatePlayerState() then return end
+    if #selectedEnemyNames == 0 then return end
+    
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    local enemies = FindEnemiesInRange(200)
+    local targets = {}
+    
+    -- Lọc ra TẤT CẢ các kẻ địch có tên đã chọn
+    for _, enemy in ipairs(enemies) do
+        for _, selectedName in ipairs(selectedEnemyNames) do
+            if enemy.Name == selectedName then
+                table.insert(targets, enemy)
+                break 
+            end
+        end
+    end
+    
+    table.sort(targets, function(a, b) return a.Distance < b.Distance end)
+    
+    if #targets == 0 then return end
+    
+    -- Tấn công burst từng mục tiêu
+    local remote = GetAttackRemote()
+    if not remote then return end
+
+    for _, target in ipairs(targets) do
+        if not activeLoops["FarmSelected"] then break end 
+        
+        if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
+            
+            -- Teleport (offset ngẫu nhiên nhẹ)
+            local offset = Vector3.new(
+                math.random(-10, 10) / 10,
+                3,
+                math.random(-10, 10) / 10
+            )
+            root.CFrame = CFrame.new(target.Position + offset)
+            
+            -- Burst Attack 
+            SafeFire(remote, "Attack", target.Model)
+            task.wait(0.05)
+            SafeFire(remote, "Attack", target.Model)
+            
+            -- Độ trễ ngắn cho mục tiêu tiếp theo (Nếu loop chạy nhanh hơn 0.1s, điều này sẽ điều chỉnh)
+            task.wait(0.05) 
+        end
+    end
+end
+
 local function AutoAttackLogic()
     if isDungeonActive or not ValidatePlayerState() then return end
     local enemies = FindEnemiesInRange(Config.AttackRange)
@@ -245,26 +296,6 @@ local function AutoAttackLogic()
             local remote = GetAttackRemote()
             if remote then SafeFire(remote, "Attack", nearestEnemy.Model) end
         end
-    end
-end
-
-local function FarmSelectedLogic()
-    if isDungeonActive or not ValidatePlayerState() then return end
-    if #selectedEnemyPositions == 0 then return end
-    local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-    
-    local playerPos = character.HumanoidRootPart.Position
-    local nearestPos, nearestDistance = nil, math.huge
-    for _, pos in pairs(selectedEnemyPositions) do
-        local distance = (playerPos - pos).Magnitude
-        if distance < nearestDistance then nearestDistance = distance; nearestPos = pos end
-    end
-    
-    if nearestPos then
-        character.HumanoidRootPart.CFrame = CFrame.new(nearestPos + Vector3.new(0,2,0))
-        local remote = GetAttackRemote()
-        if remote then SafeFire(remote, "AttackAtPosition", nearestPos) end
     end
 end
 
@@ -288,7 +319,6 @@ local function AutoCollectLogic()
     local remote = GetAttackRemote()
     if not remote then return end
     
-    -- SỬA LỖI 2: Character và HumanoidRootPart check
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if not root then return end 
 
@@ -381,7 +411,6 @@ local function AutoFarmDungeonLogic()
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     
-    -- SỬA LỖI 3: Check HumanoidRootPart
     if not root then
         isPlayerInDungeon = false
         return
@@ -429,6 +458,30 @@ local function StartAutoRollLoop(gachaName)
     StartLoop(loopName, function() StartGacha(gachaName) end, 2)
 end
 
+-- NEW: Hàm lấy Enemy Groups (Dùng cho tab FARM/ENEMIES)
+local function GetEnemyGroups()
+    local enemies = FindEnemiesInRange(200)
+    local groups = {}
+    
+    for _, enemy in ipairs(enemies) do
+        if not groups[enemy.Name] then
+            groups[enemy.Name] = {
+                name = enemy.Name,
+                count = 0,
+                nearestDistance = math.huge
+            }
+        end
+        
+        groups[enemy.Name].count = groups[enemy.Name].count + 1
+        if enemy.Distance < groups[enemy.Name].nearestDistance then
+            groups[enemy.Name].nearestDistance = enemy.Distance
+        end
+    end
+    
+    return groups
+end
+
+
 -- ===================================================================
 -- V. GUI FRAMEWORK
 -- ===================================================================
@@ -441,7 +494,6 @@ local COLOR_TEXT_DIM = Color3.fromRGB(180, 180, 180)
 local COLOR_ON = Color3.fromRGB(0, 200, 0)
 local COLOR_OFF = Color3.fromRGB(200, 0, 0)
 
--- Khai báo biến TitleBar ở phạm vi global trước khi các hàm GUI được gọi
 local TitleBar 
 
 local function CreatePanel(size, position, parent)
@@ -477,7 +529,7 @@ function CreateToggleSwitch(text, description, default, callback, parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 0, 50)
     frame.BackgroundTransparency = 1
-    frame.Parent = parent -- FIX
+    frame.Parent = parent 
 
     local label = CreateLabel(text, UDim2.new(0.6, 0, 0.5, 0), UDim2.new(0, 10, 0, 0), frame, true, 13)
     local desc = CreateLabel(description, UDim2.new(0.8, 0, 0.5, 0), UDim2.new(0, 10, 0.5, 0), frame, false, 11, COLOR_TEXT_DIM)
@@ -511,7 +563,7 @@ function CreateToggleSwitch(text, description, default, callback, parent)
             local label = TitleBar:FindFirstChild("StealthLabel")
             if indicator and label then
                 indicator.BackgroundColor3 = isOn and COLOR_ON or COLOR_OFF
-                label.Text = isOn and "Stealth: ON" or "Stealth: OFF"
+                label.Text = isOn and "STEALTH: ON" or "STEALTH: OFF"
                 label.TextColor3 = isOn and COLOR_ON or COLOR_OFF
             end
         end
@@ -525,7 +577,7 @@ function CreateActionButton(text, description, callback, parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 0, 50)
     frame.BackgroundTransparency = 1
-    frame.Parent = parent -- FIX
+    frame.Parent = parent 
     
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0.4, 0, 0, 32)
@@ -556,7 +608,7 @@ function CreateComboBox(text, description, items, callback, parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 0, 60)
     frame.BackgroundTransparency = 1
-    frame.Parent = parent -- FIX
+    frame.Parent = parent 
     
     local label = CreateLabel(text, UDim2.new(0.5, 0, 0.5, 0), UDim2.new(0, 10, 0, 5), frame, true, 14)
     local desc = CreateLabel(description, UDim2.new(0.5, 0, 0.5, 0), UDim2.new(0, 10, 0.5, 0), frame, false, 11, COLOR_TEXT_DIM)
@@ -930,8 +982,8 @@ stealthToggle.Parent = settingsContent
 local enemiesContent = tabFrames["🎯 ENEMIES"]
 CreateLabel("ENEMY SELECTOR:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), enemiesContent, true, 16, COLOR_ACCENT)
 
-local clearSelectionBtn = CreateActionButton("Clear Selected Positions", "Xóa tất cả vị trí kẻ địch đã chọn (" .. #selectedEnemyPositions .. "x)", function()
-    selectedEnemyPositions = {}
+local clearSelectionBtn = CreateActionButton("Clear Selected Positions", "Xóa tất cả vị trí kẻ địch đã chọn (" .. #selectedEnemyNames .. "x)", function()
+    selectedEnemyNames = {}
     print("🗑️ Đã xóa danh sách kẻ địch được chọn.")
 end, enemiesContent)
 clearSelectionBtn.Parent = enemiesContent
@@ -941,40 +993,41 @@ local refreshEnemiesBtn = CreateActionButton("Refresh/Scan Enemies", "Quét lạ
         if child.Name ~= "UILabel" and child ~= refreshEnemiesBtn and child ~= clearSelectionBtn then child:Destroy() end
     end
     
-    local enemies = RefreshEnemiesList()
-    local enemyNames = {}
-    for _, enemy in ipairs(enemies) do table.insert(enemyNames, enemy.Name) end
-    
-    local uniqueEnemyNames = {}
-    local seen = {}
-    for _, name in ipairs(enemyNames) do
-        if not seen[name] then
-            seen[name] = true
-            table.insert(uniqueEnemyNames, name)
-        end
-    end
+    local enemyGroups = GetEnemyGroups()
+    local sortedEnemyNames = {}
+    for name, _ in pairs(enemyGroups) do table.insert(sortedEnemyNames, name) end
+    table.sort(sortedEnemyNames)
 
     CreateLabel("---", UDim2.new(1, 0, 0, 10), UDim2.new(0, 10, 0, 0), enemiesContent, false, 14, COLOR_TEXT_DIM)
     
-    for _, name in ipairs(uniqueEnemyNames) do
-        local count = 0
-        local positions = {}
-        for _, enemy in ipairs(enemies) do 
-            if enemy.Name == name then 
-                count = count + 1 
-                table.insert(positions, enemy.Position)
-            end 
+    for _, name in ipairs(sortedEnemyNames) do
+        local group = enemyGroups[name]
+        local isSelected = false
+        for _, selectedName in ipairs(selectedEnemyNames) do
+            if selectedName == name then isSelected = true; break end
         end
 
-        local combo = CreateComboBox(name .. " (" .. count .. "x)", "Chọn để đánh dấu vị trí hoặc bỏ qua", {"Add all " .. name .. " to Farm List", "Skip"}, function(selected)
-            if selected:find("Add all") then
-                for _, pos in ipairs(positions) do
-                    table.insert(selectedEnemyPositions, pos)
+        local toggle = CreateToggleSwitch(
+            name .. " (" .. group.count .. "x)", 
+            "Gần nhất: " .. math.floor(group.nearestDistance) .. "m | Chọn để farm nhóm này.", 
+            isSelected, 
+            function(enabled)
+                if enabled then
+                    local found = false
+                    for _, n in ipairs(selectedEnemyNames) do
+                        if n == name then found = true; break end
+                    end
+                    if not found then table.insert(selectedEnemyNames, name) end
+                    print("✅ Đã thêm nhóm " .. name .. " (" .. group.count .. "x) vào danh sách farm.")
+                else
+                    for i, n in ipairs(selectedEnemyNames) do
+                        if n == name then table.remove(selectedEnemyNames, i); break end
+                    end
+                    print("❌ Đã xóa nhóm " .. name .. " khỏi danh sách farm.")
                 end
-                print("✅ Đã thêm " .. count .. " vị trí của " .. name .. " vào danh sách farm.")
-            end
-        end, enemiesContent)
-        combo.Parent = enemiesContent
+            end, enemiesContent
+        )
+        toggle.Parent = enemiesContent
     end
 end, enemiesContent)
 refreshEnemiesBtn.Parent = enemiesContent
@@ -1014,7 +1067,7 @@ task.spawn(function()
                 ContentScroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
             end
         end
-        clearSelectionBtn.Text = "Clear Selected Positions (" .. #selectedEnemyPositions .. "x)"
+        clearSelectionBtn.Text = "Clear Selected Positions (" .. #selectedEnemyNames .. "x)"
         task.wait(0.5)
     end
 end)
