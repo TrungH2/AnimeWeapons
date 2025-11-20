@@ -1,5 +1,4 @@
--- Himono Hub v4.2 - SULFUR EDITION (Màu lưu huỳnh, đầy đủ chức năng)
-
+-- Himono Hub v4.2 - 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -9,11 +8,14 @@ local LocalPlayer = Players.LocalPlayer
 local stealthMode = true
 local safeConnections = {}
 local activeLoops = {}
-local selectedEnemyNames = {} -- Thay đổi: lưu TÊN thay vì vị trí
+local selectedEnemyNames = {}
 local selectedGachaType = "Biju"
 local selectedZone = "Zone 1"
 local selectedStat = "Attack"
 local autoOpenEggEnabled = false
+
+-- Config file path
+local configFile = "HimonoHubSulfurConfig.txt"
 
 -- Safe remote fire
 local function SafeFire(remote, ...)
@@ -69,6 +71,21 @@ local function EnableAntiAFK()
     end)
 end
 
+local ignoreNPCNames = {
+    "npc", "gacha", "roll", "merchant", "shop", "vendor", "trader", "egg",
+    "crate", "box", "dealer"
+}
+
+local function IsNPC(model)
+    local modelName = model.Name:lower()
+    for _, npcName in ipairs(ignoreNPCNames) do
+        if modelName:find(npcName) then
+            return true
+        end
+    end
+    return false
+end
+
 local function FindEnemiesInRange(range)
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return {} end
@@ -80,8 +97,7 @@ local function FindEnemiesInRange(range)
             for _, player in pairs(Players:GetPlayers()) do
                 if player.Character == obj then isPlayer = true; break end
             end
-            -- Bỏ qua NPC: chỉ target enemy (không phải player, không phải NPC)
-            local isNPC = obj.Name:lower():find("npc")
+            local isNPC = IsNPC(obj)
             if not isPlayer and not isNPC and obj.Humanoid.Health > 0 then
                 local distance = (playerPos - obj.Head.Position).Magnitude
                 if distance <= (range or 100) then
@@ -105,7 +121,6 @@ local function RefreshEnemiesList()
     return FindEnemiesInRange(100)
 end
 
--- Auto farm logic
 local function AutoAttackLogic()
     local enemies = FindEnemiesInRange(50)
     if #enemies > 0 then
@@ -121,36 +136,48 @@ end
 
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
-
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-
-    local enemies = FindEnemiesInRange(100)
-    local targetEnemy = nil
-    local nearestDistance = math.huge
-
+    local enemies = FindEnemiesInRange(200)
+    local targets = {}
     for _, enemy in ipairs(enemies) do
         for _, selectedName in ipairs(selectedEnemyNames) do
             if enemy.Name == selectedName then
-                if enemy.Distance < nearestDistance then
-                    nearestDistance = enemy.Distance
-                    targetEnemy = enemy
-                end
+                table.insert(targets, enemy)
             end
         end
     end
-
-    if targetEnemy then
-        character.HumanoidRootPart.CFrame = CFrame.new(targetEnemy.Position + Vector3.new(0,2,0))
-        local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-        if remote then SafeFire(remote, "Attack", targetEnemy.Model) end
+    table.sort(targets, function(a, b) return a.Distance < b.Distance end)
+    for _, target in ipairs(targets) do
+        if not activeLoops["FarmSelected"] then break end
+        if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
+            character.HumanoidRootPart.CFrame = CFrame.new(target.Position + Vector3.new(0, 3, 0))
+            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+            if remote then
+                local attackStart = tick()
+                while tick() - attackStart < 2 and activeLoops["FarmSelected"] do
+                    if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
+                        SafeFire(remote, "Attack", target.Model)
+                        task.wait(0.3)
+                    else
+                        break
+                    end
+                end
+            end
+        end
     end
 end
 
 local function FarmRandomLogic()
     local enemies = FindEnemiesInRange(50)
-    if #enemies > 0 then
-        local randomEnemy = enemies[math.random(1, #enemies)]
+    local validEnemies = {}
+    for _, enemy in ipairs(enemies) do
+        if not IsNPC(enemy.Model) then
+            table.insert(validEnemies, enemy)
+        end
+    end
+    if #validEnemies > 0 then
+        local randomEnemy = validEnemies[math.random(1, #validEnemies)]
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             character.HumanoidRootPart.CFrame = CFrame.new(randomEnemy.Position + Vector3.new(0,2,0))
@@ -204,6 +231,40 @@ local function AutoOpenEggLogic()
     end
 end
 
+-- SAVE/LOAD CONFIG
+local function SaveConfig()
+    local data = {
+        selectedEnemyNames = selectedEnemyNames,
+        selectedGachaType = selectedGachaType,
+        selectedZone = selectedZone,
+        selectedStat = selectedStat,
+        autoOpenEggEnabled = autoOpenEggEnabled,
+        stealthMode = stealthMode
+    }
+    local encoded = game:GetService("HttpService"):JSONEncode(data)
+    writefile(configFile, encoded)
+end
+
+local function LoadConfig()
+    if isfile(configFile) then
+        local encoded = readfile(configFile)
+        local data = game:GetService("HttpService"):JSONDecode(encoded)
+        selectedEnemyNames = data.selectedEnemyNames or {}
+        selectedGachaType = data.selectedGachaType or "Biju"
+        selectedZone = data.selectedZone or "Zone 1"
+        selectedStat = data.selectedStat or "Attack"
+        autoOpenEggEnabled = data.autoOpenEggEnabled or false
+        stealthMode = data.stealthMode or true
+    end
+end
+
+local function DeleteConfig()
+    if isfile(configFile) then
+        delfile(configFile)
+    end
+end
+
+-- GUI Creation
 local HimonoHub = Instance.new("ScreenGui")
 HimonoHub.Name = "HimonoHubSulfur"
 HimonoHub.ResetOnSpawn = false
@@ -233,7 +294,7 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🟡 HIMONO HUB v4.2 - SULFUR EDITION"
+Title.Text = "🟡 HIMONO HUB v4.2 - SULFUR EDITION (FIXED)"
 Title.TextColor3 = Color3.fromRGB(40, 40, 20)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 18
@@ -504,7 +565,7 @@ local mainContent = tabFrames["🏠 MAIN"]
 local mainStatus = Instance.new("TextLabel")
 mainStatus.Size = UDim2.new(1, -20, 0, 30)
 mainStatus.BackgroundTransparency = 1
-mainStatus.Text = "🟡 Himono Hub đã sẵn sàng!"
+mainStatus.Text = "🟡 Himono Hub FIXED - Farm đa mục tiêu!"
 mainStatus.TextColor3 = Color3.fromRGB(40,40,20)
 mainStatus.Font = Enum.Font.Gotham
 mainStatus.TextSize = 14
@@ -515,12 +576,12 @@ local autoAttackToggle = CreateToggleSwitch("Enable Auto Attack", "Tự động 
 end)
 autoAttackToggle.Parent = mainContent
 
-local autoFarmSelectedToggle = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ con enemy có TÊN đã chọn", false, function(enabled)
+local autoFarmSelectedToggle = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ con enemy có TÊN đã chọn (FIXED)", false, function(enabled)
     if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.5) else StopLoop("FarmSelected") end
 end)
 autoFarmSelectedToggle.Parent = mainContent
 
-local autoFarmRandomToggle = CreateToggleSwitch("Enable Farm Random Enemies", "Tự động farm ngẫu nhiên", false, function(enabled)
+local autoFarmRandomToggle = CreateToggleSwitch("Enable Farm Random Enemies", "Tự động farm ngẫu nhiên (KHÔNG target NPC)", false, function(enabled)
     if enabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) else StopLoop("FarmRandom") end
 end)
 autoFarmRandomToggle.Parent = mainContent
@@ -540,10 +601,7 @@ local selectEnemyBtn = CreateActionButton("Select Enemies to Farm", "Chọn lo�
         table.insert(items, enemy.Name) 
     end
 
-    if #items == 0 then
-        print("❌ Không tìm thấy enemy nào gần đó!")
-        return
-    end
+    if #items == 0 then return end
 
     local combo = CreateComboBox("Enemy List", "Chọn enemy để farm (lưu tên)", items, function(selected)
         local found = false
@@ -552,9 +610,6 @@ local selectEnemyBtn = CreateActionButton("Select Enemies to Farm", "Chọn lo�
         end
         if not found then
             table.insert(selectedEnemyNames, selected)
-            print("✅ Added to farm list: " .. selected)
-        else
-            print("⚠️ Already in farm list: " .. selected)
         end
     end)
     combo.Parent = farmContent
@@ -563,24 +618,15 @@ selectEnemyBtn.Parent = farmContent
 
 local clearFarmBtn = CreateActionButton("Clear Farm List", "Xóa danh sách enemy được chọn", function()
     selectedEnemyNames = {}
-    print("🗑️ Cleared farm list!")
 end)
 clearFarmBtn.Parent = farmContent
 
 local showFarmBtn = CreateActionButton("Show Selected List", "Xem danh sách enemy đang farm", function()
-    if #selectedEnemyNames == 0 then
-        print("📭 Farm list is empty!")
-    else
-        print("📋 Current Farm List:")
-        for i, name in ipairs(selectedEnemyNames) do
-            print("  " .. i .. ". " .. name)
-        end
-    end
+    -- Không print ra console nữa
 end)
 showFarmBtn.Parent = farmContent
 
-local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh sách kẻ địch và tự động target tất cả enemy đã chọn", function()
-    -- Xóa các frame enemy cũ trong farmContent (trừ các nút chính)
+local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh sách kẻ địch", function()
     for _, child in pairs(farmContent:GetChildren()) do
         if child:IsA("Frame") and child ~= refreshBtn and child ~= selectEnemyBtn and child ~= clearFarmBtn and child ~= showFarmBtn then
             child:Destroy()
@@ -588,24 +634,6 @@ local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh s�
     end
 
     local enemies = RefreshEnemiesList()
-    print("🔄 Found " .. #enemies .. " enemies!")
-
-    -- Tự động target tất cả enemy có tên trong selectedEnemyNames
-    local character = LocalPlayer.Character
-    if character and character:FindFirstChild("HumanoidRootPart") then
-        for _, enemy in ipairs(enemies) do
-            for _, selectedName in ipairs(selectedEnemyNames) do
-                if enemy.Name == selectedName then
-                    character.HumanoidRootPart.CFrame = CFrame.new(enemy.Position + Vector3.new(0,2,0))
-                    local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-                    if remote then SafeFire(remote, "Attack", enemy.Model) end
-                    print("⚔️ Targeted: " .. enemy.Name)
-                end
-            end
-        end
-    end
-
-    -- Hiển thị danh sách enemy để chọn thêm vào farm list
     for _, enemy in ipairs(enemies) do
         local infoFrame = Instance.new("Frame")
         infoFrame.Size = UDim2.new(1, 0, 0, 40)
@@ -634,6 +662,18 @@ local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh s�
         selectBtn.Parent = infoFrame
 
         local isSelected = false
+        for _, selectedName in ipairs(selectedEnemyNames) do
+            if selectedName == enemy.Name then
+                isSelected = true
+                break
+            end
+        end
+
+        if isSelected then
+            selectBtn.BackgroundColor3 = Color3.fromRGB(180, 220, 40)
+            selectBtn.Text = "✅ SELECTED"
+        end
+
         selectBtn.MouseButton1Click:Connect(function()
             isSelected = not isSelected
             if isSelected then
@@ -645,7 +685,6 @@ local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh s�
                 end
                 if not found then
                     table.insert(selectedEnemyNames, enemy.Name)
-                    print("✅ Added to farm list: " .. enemy.Name)
                 end
             else
                 selectBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
@@ -653,7 +692,6 @@ local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh s�
                 for i, name in ipairs(selectedEnemyNames) do
                     if name == enemy.Name then
                         table.remove(selectedEnemyNames, i)
-                        print("❌ Removed from farm list: " .. enemy.Name)
                         break
                     end
                 end
@@ -662,6 +700,21 @@ local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh s�
     end
 end)
 refreshBtn.Parent = farmContent
+
+local saveConfigBtn = CreateActionButton("Save Config", "Lưu lại cấu hình hiện tại", function()
+    SaveConfig()
+end)
+saveConfigBtn.Parent = farmContent
+
+local loadConfigBtn = CreateActionButton("Load Config", "Tải lại cấu hình đã lưu", function()
+    LoadConfig()
+end)
+loadConfigBtn.Parent = farmContent
+
+local deleteConfigBtn = CreateActionButton("Delete Config", "Xóa file config đã lưu", function()
+    DeleteConfig()
+end)
+deleteConfigBtn.Parent = farmContent
 
 -- GACHA TAB
 local gachaContent = tabFrames["🎰 GACHA"]
@@ -692,7 +745,6 @@ statCombo.Parent = statsContent
 
 local distributeBtn = CreateActionButton("Distribute Stat Point", "Cộng điểm stat đã chọn", function()
     DistributeStat(selectedStat)
-    print("⚡ Distributed stat: " .. selectedStat)
 end)
 distributeBtn.Parent = statsContent
 
@@ -706,7 +758,6 @@ zoneCombo.Parent = teleportContent
 
 local teleportBtn = CreateActionButton("Teleport", "Di chuyển đến khu vực đã chọn", function()
     TeleportToZone(selectedZone)
-    print("🚀 Teleported to: " .. selectedZone)
 end)
 teleportBtn.Parent = teleportContent
 
@@ -714,7 +765,6 @@ teleportBtn.Parent = teleportContent
 local eggContent = tabFrames["🥚 OPEN EGG"]
 local openEggBtn = CreateActionButton("Open Egg", "Mở egg gần bạn", function()
     AutoOpenEggLogic()
-    print("🥚 Opened egg!")
 end)
 openEggBtn.Parent = eggContent
 
@@ -747,8 +797,6 @@ local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại 
         if child:IsA("Frame") and child ~= refreshEnemiesBtn then child:Destroy() end
     end
     local enemies = RefreshEnemiesList()
-    print("🔍 Found " .. #enemies .. " enemies!")
-
     for _, enemy in ipairs(enemies) do
         local infoFrame = Instance.new("Frame")
         infoFrame.Size = UDim2.new(1, 0, 0, 60)
@@ -796,6 +844,18 @@ local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại 
         selectCorner.Parent = selectBtn
 
         local isSelected = false
+        for _, selectedName in ipairs(selectedEnemyNames) do
+            if selectedName == enemy.Name then
+                isSelected = true
+                break
+            end
+        end
+
+        if isSelected then
+            selectBtn.BackgroundColor3 = Color3.fromRGB(180, 220, 40)
+            selectBtn.Text = "✅ SELECTED"
+        end
+
         selectBtn.MouseButton1Click:Connect(function()
             isSelected = not isSelected
             if isSelected then
@@ -807,7 +867,6 @@ local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại 
                 end
                 if not found then
                     table.insert(selectedEnemyNames, enemy.Name)
-                    print("✅ Added to farm list: " .. enemy.Name)
                 end
             else
                 selectBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
@@ -815,7 +874,6 @@ local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại 
                 for i, name in ipairs(selectedEnemyNames) do
                     if name == enemy.Name then
                         table.remove(selectedEnemyNames, i)
-                        print("❌ Removed from farm list: " .. enemy.Name)
                         break
                     end
                 end
@@ -862,5 +920,3 @@ task.spawn(function()
         task.wait(0.5)
     end
 end)
-
-print("🟡 Himono Hub v4.2 - SULFUR EDITION LOADED!")
