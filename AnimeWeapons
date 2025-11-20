@@ -1,30 +1,34 @@
+-- Himono Hub v4.2 - PURPLE EDITION (FULL AUTO-LOAD FIXED)
+-- Himono Hub v4.2 - PURPLE EDITION (FINAL VERSION: SPEED FARM / AUTO-LOAD / MINI-UI)
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
+-- Biến Trạng Thái Cốt Lõi
 local stealthMode = true
 local safeConnections = {}
 local activeLoops = {}
-local selectedEnemyPositions = {}
+local selectedEnemyNames = {}
 local selectedGachaType = "Biju"
 local selectedZone = "Zone 1"
 local selectedStat = "Attack"
 local autoOpenEggEnabled = false
 
-local isDungeonActive = false         -- Cờ: BẬT khi Auto Join/Farm Dungeon ON
-local autoDungeonFarmEnabled = false  -- Cờ: BẬT khi Auto Farm Dungeon ON
-local isPlayerInDungeon = false       -- Cờ: Theo dõi trạng thái player trong Dungeon
+-- NEW: Biến theo dõi trạng thái các toggle
+-- NEW: Biến theo dõi trạng thái các toggle để lưu/tải
+local selectedFarmEnabled = false
+local autoAttackEnabled = false
+local farmRandomEnabled = false
+local autoCollectEnabled = false
+local stealthModeEnabled = true
+local antiAFKEnabled = true
 
--- Các biến lưu trạng thái Farm trước khi vào Dungeon
-local wasAutoAttackEnabled = false
-local wasFarmSelectedEnabled = false
-local wasFarmRandomEnabled = false
-local wasAutoCollectEnabled = false
-
--- BIẾN MỚI ĐỂ QUAY LẠI VỊ TRÍ CŨ
-local lastZone = "Zone 1" 
+-- Config file path
+local configFile = "HimonoHubPurpleConfig.txt"
 
 -- Safe remote fire
 local function SafeFire(remote, ...)
@@ -69,42 +73,6 @@ local function StopLoop(name)
     if activeLoops[name] then activeLoops[name] = false end
 end
 
--- -------------------------------------------------------------------
--- CHỨC NĂNG QUẢN LÝ FARM LOOPS
--- -------------------------------------------------------------------
-
-local function SaveAndStopFarmLoops()
-    -- Lưu trạng thái các loop farm map
-    wasAutoAttackEnabled = activeLoops["AutoAttack"] or false
-    wasFarmSelectedEnabled = activeLoops["FarmSelected"] or false
-    wasFarmRandomEnabled = activeLoops["FarmRandom"] or false
-    wasAutoCollectEnabled = activeLoops["AutoCollect"] or false
-    
-    -- Dừng các loop farm map
-    StopLoop("AutoAttack")
-    StopLoop("FarmSelected")
-    StopLoop("FarmRandom")
-    StopLoop("AutoCollect")
-end
-
-local function RestoreFarmLoops()
-    if wasAutoAttackEnabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) end
-    if wasFarmSelectedEnabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.5) end
-    if wasFarmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
-    if wasAutoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
-    
-    print("✅ Đã khôi phục cài đặt Farm map cũ.")
-    -- Reset cờ lưu trạng thái
-    wasAutoAttackEnabled = false
-    wasFarmSelectedEnabled = false
-    wasFarmRandomEnabled = false
-    wasAutoCollectEnabled = false
-end
-
--- -------------------------------------------------------------------
--- CHỨC NĂNG CƠ BẢN VÀ CẬP NHẬT FARM LOGIC
--- -------------------------------------------------------------------
-
 local antiAFKConnection
 local function EnableAntiAFK()
     if antiAFKConnection then antiAFKConnection:Disconnect() end
@@ -116,6 +84,15 @@ local function EnableAntiAFK()
     end)
 end
 
+local function DisableAntiAFK()
+    if antiAFKConnection then
+        antiAFKConnection:Disconnect()
+        antiAFKConnection = nil
+    end
+end
+
+-- SIMPLIFIED: Không lọc NPC như phiên bản vàng
+-- SIMPLIFIED: Không lọc NPC
 local function FindEnemiesInRange(range)
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return {} end
@@ -127,6 +104,7 @@ local function FindEnemiesInRange(range)
             for _, player in pairs(Players:GetPlayers()) do
                 if player.Character == obj then isPlayer = true; break end
             end
+            -- ĐƠN GIẢN: Chỉ kiểm tra không phải player và còn máu
             if not isPlayer and obj.Humanoid.Health > 0 then
                 local distance = (playerPos - obj.Head.Position).Magnitude
                 if distance <= (range or 100) then
@@ -150,8 +128,32 @@ local function RefreshEnemiesList()
     return FindEnemiesInRange(100)
 end
 
+-- NEW: Group enemies by name (tính năng mới)
+-- Group enemies by name
+local function GetEnemyGroups()
+    local enemies = FindEnemiesInRange(200)
+    local groups = {}
+
+    for _, enemy in ipairs(enemies) do
+        if not groups[enemy.Name] then
+            groups[enemy.Name] = {
+                name = enemy.Name,
+                count = 0,
+                nearestDistance = math.huge
+            }
+        end
+
+        groups[enemy.Name].count = groups[enemy.Name].count + 1
+        if enemy.Distance < groups[enemy.Name].nearestDistance then
+            groups[enemy.Name].nearestDistance = enemy.Distance
+        end
+    end
+
+    return groups
+end
+
+-- Auto farm logic
 local function AutoAttackLogic()
-    if isDungeonActive then return end 
     local enemies = FindEnemiesInRange(50)
     if #enemies > 0 then
         local nearestEnemy = enemies[1]
@@ -164,26 +166,79 @@ local function AutoAttackLogic()
     end
 end
 
+-- IMPROVED: Farm Vòng Lặp Mục Tiêu Tốc Độ Cao (Target Rotation)
+-- Auto farm logic (Vòng Lặp Mục Tiêu Tốc Độ Cao)
 local function FarmSelectedLogic()
-    if isDungeonActive then return end 
-    if #selectedEnemyPositions == 0 then return end
+    if #selectedEnemyNames == 0 then return end
+
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-    local playerPos = character.HumanoidRootPart.Position
-    local nearestPos, nearestDistance = nil, math.huge
-    for _, pos in pairs(selectedEnemyPositions) do
-        local distance = (playerPos - pos).Magnitude
-        if distance < nearestDistance then nearestDistance = distance; nearestPos = pos end
+
+    local enemies = FindEnemiesInRange(200) -- Phạm vi quét rộng
+    local targets = {}
+
+    -- Lọc ra TẤT CẢ các kẻ địch có tên đã chọn
+    for _, enemy in ipairs(enemies) do
+        for _, selectedName in ipairs(selectedEnemyNames) do
+            if enemy.Name == selectedName then
+                table.insert(targets, enemy)
+                break 
+            end
+        end
     end
-    if nearestPos then
-        character.HumanoidRootPart.CFrame = CFrame.new(nearestPos + Vector3.new(0,2,0))
-        local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-        if remote then SafeFire(remote, "AttackAtPosition", nearestPos) end
+
+    -- Sắp xếp danh sách mục tiêu theo khoảng cách gần nhất để bắt đầu vòng lặp
+    table.sort(targets, function(a, b) return a.Distance < b.Distance end)
+
+    if #targets == 0 then return end
+
+    -- Tấn công từng mục tiêu theo thứ tự
+    for _, target in ipairs(targets) do
+        if not activeLoops["FarmSelected"] then break end 
+
+        -- Chỉ tấn công nếu mục tiêu còn tồn tại và còn máu
+        if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
+
+            -- Teleport đến mục tiêu (sử dụng offset ngẫu nhiên nhẹ)
+            local offset = Vector3.new(
+                math.random(-10, 10) / 10, -- Offset ngẫu nhiên nhỏ
+                math.random(-10, 10) / 10,
+                3,
+                math.random(-10, 10) / 10
+            )
+            character.HumanoidRootPart.CFrame = CFrame.new(target.Position + offset)
+
+            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+            if remote then 
+                -- Tấn công nhanh (burst attack)
+                SafeFire(remote, "Attack", target.Model)
+                task.wait(0.05) -- Độ trễ rất nhỏ giữa các lần tấn công
+                task.wait(0.05)
+                SafeFire(remote, "Attack", target.Model)
+            end
+        end
+
+        -- Độ trễ ngắn trước khi chuyển sang mục tiêu tiếp theo trong danh sách
+        -- Độ trễ ngắn trước khi chuyển sang mục tiêu tiếp theo
+        task.wait(0.1) 
+    end
+end
+
+-- Auto farm logic
+local function AutoAttackLogic()
+    local enemies = FindEnemiesInRange(50)
+    if #enemies > 0 then
+        local nearestEnemy = enemies[1]
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + Vector3.new(0,2,0))
+            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+            if remote then SafeFire(remote, "Attack", nearestEnemy.Model) end
+        end
     end
 end
 
 local function FarmRandomLogic()
-    if isDungeonActive then return end 
     local enemies = FindEnemiesInRange(50)
     if #enemies > 0 then
         local randomEnemy = enemies[math.random(1, #enemies)]
@@ -197,7 +252,6 @@ local function FarmRandomLogic()
 end
 
 local function AutoCollectLogic()
-    if isDungeonActive then return end 
     local character = LocalPlayer.Character
     if not character then return end
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -211,6 +265,7 @@ local function AutoCollectLogic()
     end
 end
 
+-- Các hàm cơ bản (Gacha, Teleport, Stats)
 local function StartGacha(gachaType)
     local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
     if remote then
@@ -224,8 +279,6 @@ local function TeleportToZone(zoneName)
     local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
     if remote then
         SafeFire(remote, "Zone Teleport", {[1]=zoneName})
-        selectedZone = zoneName -- Cập nhật selectedZone
-        lastZone = zoneName
     end
 end
 
@@ -236,266 +289,134 @@ local function DistributeStat(statName)
     end
 end
 
+-- FIXED: Auto Open Egg với logic kiểm tra khoảng cách
+-- Auto Open Egg với logic kiểm tra khoảng cách
 local function AutoOpenEggLogic()
-    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-    if remote then
-        SafeFire(remote, "Open Star", {[1]="Egg"})
-    end
-end
-
--- -------------------------------------------------------------------
--- LOGIC AUTO REBIRTH & DUNGEON
--- -------------------------------------------------------------------
-
-local function AutoRebirthLogic()
-    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-    if remote then
-        local args = {
-            [1] = "RankUp" -- Lệnh RankUp/Rebirth
-        }
-        SafeFire(remote, unpack(args))
-        print("⚡ Đã kích hoạt Auto Rebirth/RankUp!")
-    end
-end
-
-local function AutoJoinDungeonEasyLogic()
-    -- Ghi nhớ zone hiện tại (dùng selectedZone) trước khi join dungeon
-    lastZone = selectedZone 
-    
-    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-    if remote then
-        local args = {
-            [1] = "Join Gamemode",
-            [2] = {
-                [1] = "Dungeon:1" -- "Dungeon:1" là Dungeon Easy
-            }
-        }
-        SafeFire(remote, unpack(args))
-        print("🗺️ Đã gửi yêu cầu tham gia Dungeon Easy!")
-    end
-end
-
-local function AutoFarmDungeonLogic()
     local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then 
-        isPlayerInDungeon = false
-        return 
-    end
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
 
-    local enemies = FindEnemiesInRange(200)
-    if #enemies > 0 then
-        isPlayerInDungeon = true 
-        local nearestEnemy = enemies[1]
-        
-        -- Teleport đến vị trí kẻ địch
-        character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + Vector3.new(0,5,0))
-        
-        -- Tấn công
-        local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-        if remote then 
-            SafeFire(remote, "Attack", nearestEnemy.Model) 
+    -- Chỉ mở egg khi gần (15m)
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and (obj.Name:lower():find("egg") or obj.Name:lower():find("crate")) then
+            local distance = (character.HumanoidRootPart.Position - obj:GetPivot().Position).Magnitude
+            if distance < 15 then
+                local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
+                if remote then
+                    SafeFire(remote, "Open Star", {[1]="Egg"})
+                end
+                break
+            end
         end
-    else
-        isPlayerInDungeon = false
     end
 end
 
-local function DungeonExitCheck()
-    -- Kiểm tra nếu Dungeon đã được kích hoạt, nhưng hiện tại không tìm thấy kẻ địch Dungeon (có thể đã thoát/hoàn thành)
-    -- và cả hai Toggle Dungeon (Join và Farm) đều OFF.
-    if isDungeonActive and not isPlayerInDungeon and not activeLoops["AutoJoinDungeon"] and not activeLoops["AutoFarmDungeon"] then
+-- FIXED: Thêm hàm Save/Load Config với tất cả trạng thái
+-- Save/Load Config
+local function SaveConfig()
+    local data = {
+        selectedEnemyNames = selectedEnemyNames,
+        selectedGachaType = selectedGachaType,
+        selectedZone = selectedZone,
+        selectedStat = selectedStat,
+        autoOpenEggEnabled = autoOpenEggEnabled,
+        stealthMode = stealthMode,
         
-        -- Dừng loop kiểm tra này trong một khoảng ngắn để tránh gọi Teleport liên tục
-        StopLoop("DungeonExitLoop")
-        
-        isDungeonActive = false
-        autoDungeonFarmEnabled = false
-        
-        print("🚪 Đã thoát Dungeon. Quay về Zone cũ: " .. lastZone)
-        TeleportToZone(lastZone) -- Teleport về Zone đã lưu
-        
-        RestoreFarmLoops() -- Khôi phục lại các loop farm map
-        
-        -- Khởi động lại loop kiểm tra
-        StartLoop("DungeonExitLoop", DungeonExitCheck, 5)
-    end
-end
--- Bắt đầu loop kiểm tra thoát Dungeon
-StartLoop("DungeonExitLoop", DungeonExitCheck, 5)
-
--- -------------------------------------------------------------------
--- GUI FRAMEWORK FUNCTIONS
--- -------------------------------------------------------------------
-
--- <<< HÀM CreateToggleSwitch ĐÃ HOÀN THIỆN >>>
-function CreateToggleSwitch(text, description, default, callback)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -20, 0, 60)
-    frame.BackgroundTransparency = 1
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.7, 0, 1, -20)
-    label.Position = UDim2.new(0, 0, 0, 0)
-    label.Text = text .. "\n" .. description
-    label.TextColor3 = Color3.fromRGB(40, 40, 20) -- Thay đổi màu chữ để dễ nhìn trên nền vàng
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 12
-    label.BackgroundTransparency = 1
-    label.Parent = frame
-
-    local toggleButton = Instance.new("TextButton")
-    toggleButton.Size = UDim2.new(0, 60, 0, 28)
-    toggleButton.Position = UDim2.new(1, -80, 0.5, -14)
-    toggleButton.Text = default and "ON" or "OFF"
-    toggleButton.TextColor3 = default and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0) -- Giảm độ sáng
-    toggleButton.Font = Enum.Font.GothamBold
-    toggleButton.TextSize = 14
-    toggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 40) -- Nền vàng sáng
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = toggleButton
-    toggleButton.Parent = frame
-
-    local isOn = default
-
-    SafeConnect(toggleButton.MouseButton1Click, function()
-        isOn = not isOn
-        toggleButton.Text = isOn and "ON" or "OFF"
-        toggleButton.TextColor3 = isOn and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0)
-        callback(isOn)
-    end)
-
-    return frame
-end
--- <<< HÀM CreateToggleSwitch ĐÃ HOÀN THIỆN >>>
-
-function CreateActionButton(text, description, callback)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 50)
-    frame.BackgroundTransparency = 1
-
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.5, 0, 0, 32)
-    btn.Position = UDim2.new(0, 10, 0, 9)
-    btn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(40,40,20)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 13
-    btn.Parent = frame
-
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 6)
-    btnCorner.Parent = btn
-
-    local desc = Instance.new("TextLabel")
-    desc.Size = UDim2.new(0.5, 0, 0, 20)
-    desc.Position = UDim2.new(0.5, 20, 0, 15)
-    desc.BackgroundTransparency = 1
-    desc.Text = description
-    desc.TextColor3 = Color3.fromRGB(120,120,60)
-    desc.Font = Enum.Font.Gotham
-    desc.TextSize = 11
-    desc.TextXAlignment = Enum.TextXAlignment.Left
-    desc.Parent = frame
-
-    btn.MouseButton1Click:Connect(function()
-        if callback then callback() end
-    end)
-
-    return frame
+        -- NEW: Lưu tất cả trạng thái toggle
+        selectedFarmEnabled = activeLoops["FarmSelected"] or false,
+        autoAttackEnabled = activeLoops["AutoAttack"] or false,
+        farmRandomEnabled = activeLoops["FarmRandom"] or false,
+        autoCollectEnabled = activeLoops["AutoCollect"] or false,
+        stealthModeEnabled = stealthMode,
+        antiAFKEnabled = antiAFKEnabled
+    }
+    local encoded = HttpService:JSONEncode(data)
+    writefile(configFile, encoded)
 end
 
-function CreateComboBox(text, description, items, callback)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 60)
-    frame.BackgroundTransparency = 1
+local function LoadConfig()
+    if isfile(configFile) then
+        local success, data = pcall(function()
+            local encoded = readfile(configFile)
+            return HttpService:JSONDecode(encoded)
+        end)
+        if success and data then
+            selectedEnemyNames = data.selectedEnemyNames or {}
+            selectedGachaType = data.selectedGachaType or "Biju"
+            selectedZone = data.selectedZone or "Zone 1"
+            selectedStat = data.selectedStat or "Attack"
+            autoOpenEggEnabled = data.autoOpenEggEnabled or false
+            stealthMode = data.stealthMode or true
 
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.5, 0, 0.5, 0)
-    label.Position = UDim2.new(0, 10, 0, 5)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = Color3.fromRGB(40,40,20)
-    label.Font = Enum.Font.GothamBold
-    label.TextSize = 14
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = frame
-
-    local desc = Instance.new("TextLabel")
-    desc.Size = UDim2.new(0.5, 0, 0.5, 0)
-    desc.Position = UDim2.new(0, 10, 0.5, 0)
-    desc.BackgroundTransparency = 1
-    desc.Text = description
-    desc.TextColor3 = Color3.fromRGB(120,120,60)
-    desc.Font = Enum.Font.Gotham
-    desc.TextSize = 11
-    desc.TextXAlignment = Enum.TextXAlignment.Left
-    desc.Parent = frame
-
-    local dropdown = Instance.new("TextButton")
-    dropdown.Size = UDim2.new(0.4, 0, 0, 32)
-    dropdown.Position = UDim2.new(0.55, 0, 0.25, 0)
-    dropdown.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
-    dropdown.Text = items[1] or "Select"
-    dropdown.TextColor3 = Color3.fromRGB(40,40,20)
-    dropdown.Font = Enum.Font.GothamBold
-    dropdown.TextSize = 13
-    dropdown.Parent = frame
-
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 6)
-    btnCorner.Parent = dropdown
-
-    local selected = items[1]
-    dropdown.MouseButton1Click:Connect(function()
-        local menu = Instance.new("Frame")
-        menu.Size = UDim2.new(0.4, 0, 0, #items*28)
-        menu.Position = UDim2.new(0.55, 0, 0.75, 0)
-        menu.BackgroundColor3 = Color3.fromRGB(255, 255, 180)
-        menu.Parent = frame
-        local menuCorner = Instance.new("UICorner")
-        menuCorner.CornerRadius = UDim.new(0, 6)
-        menuCorner.Parent = menu
-        for i, item in ipairs(items) do
-            local itemBtn = Instance.new("TextButton")
-            itemBtn.Size = UDim2.new(1, 0, 0, 28)
-            itemBtn.Position = UDim2.new(0, 0, 0, (i-1)*28)
-            itemBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
-            itemBtn.Text = item
-            itemBtn.TextColor3 = Color3.fromRGB(40,40,20)
-            itemBtn.Font = Enum.Font.Gotham
-            itemBtn.TextSize = 12
-            itemBtn.Parent = menu
-            itemBtn.MouseButton1Click:Connect(function()
-                dropdown.Text = item
-                selected = item
-                menu:Destroy()
-                if callback then callback(item) end
-            end)
+            -- NEW: Tải tất cả trạng thái toggle
+            selectedFarmEnabled = data.selectedFarmEnabled or false
+            autoAttackEnabled = data.autoAttackEnabled or false
+            farmRandomEnabled = data.farmRandomEnabled or false
+            autoCollectEnabled = data.autoCollectEnabled or false
+            stealthModeEnabled = data.stealthModeEnabled or true
+            antiAFKEnabled = data.antiAFKEnabled or true
         end
-    end)
-
-    return frame
+    end
 end
 
+local function DeleteConfig()
+    if isfile(configFile) then
+        delfile(configFile)
+    end
+end
 
--- -------------------------------------------------------------------
--- GUI CONSTRUCTION
--- -------------------------------------------------------------------
-
+-- GUI Creation với màu TÍM
+-- GUI Initialization
 local HimonoHub = Instance.new("ScreenGui")
-HimonoHub.Name = "HimonoHubSulfur"
+HimonoHub.Name = "HimonoHubPurple"
 HimonoHub.ResetOnSpawn = false
 HimonoHub.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 HimonoHub.Parent = game.CoreGui
+HimonoHub.Enabled = true -- Mặc định hiện
 
+-- MINI UI (Nút Neo)
+local HimonoMini = Instance.new("ScreenGui")
+HimonoMini.Name = "HimonoHubMini"
+HimonoMini.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+HimonoMini.Enabled = false -- Mặc định ẩn
+HimonoMini.Parent = game.CoreGui
+
+-- HÀM ẨN/HIỆN (Global Toggle)
+local function ToggleUI(showMain)
+    if showMain then
+        -- Hiện UI Chính, Ẩn UI Mini
+        HimonoHub.Enabled = true
+        HimonoMini.Enabled = false
+    else
+        -- Ẩn UI Chính, Hiện UI Mini
+        HimonoHub.Enabled = false
+        HimonoMini.Enabled = true
+    end
+end
+
+local MiniButton = Instance.new("TextButton")
+MiniButton.Size = UDim2.new(0, 40, 0, 40)
+MiniButton.Position = UDim2.new(1, -50, 0, 50) -- Góc trên bên phải
+MiniButton.BackgroundColor3 = Color3.fromRGB(120, 0, 200) -- Purple
+MiniButton.Text = "🟣"
+MiniButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MiniButton.Font = Enum.Font.GothamBold
+MiniButton.TextSize = 24
+MiniButton.Parent = HimonoMini
+
+local MiniCorner = Instance.new("UICorner")
+MiniCorner.CornerRadius = UDim.new(1, 0)
+MiniCorner.Parent = MiniButton
+
+SafeConnect(MiniButton.MouseButton1Click, function()
+    ToggleUI(true)
+end)
+
+-- Tạo Main Container
 local MainContainer = Instance.new("Frame")
 MainContainer.Size = UDim2.new(0, 600, 0, 500)
 MainContainer.Position = UDim2.new(0.5, -300, 0.5, -250)
-MainContainer.BackgroundColor3 = Color3.fromRGB(220, 255, 40)
+MainContainer.BackgroundColor3 = Color3.fromRGB(120, 0, 200) -- Purple
+MainContainer.BackgroundColor3 = Color3.fromRGB(120, 0, 200) 
 MainContainer.BorderSizePixel = 0
 MainContainer.Parent = HimonoHub
 
@@ -505,7 +426,8 @@ ContainerCorner.Parent = MainContainer
 
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 45)
-TitleBar.BackgroundColor3 = Color3.fromRGB(180, 220, 40)
+TitleBar.BackgroundColor3 = Color3.fromRGB(80, 0, 160) -- Dark Purple
+TitleBar.BackgroundColor3 = Color3.fromRGB(80, 0, 160) 
 TitleBar.Parent = MainContainer
 
 local TitleCorner = Instance.new("UICorner")
@@ -515,16 +437,17 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🟡 HIMONO HUB v4.2 - SULFUR EDITION"
-Title.TextColor3 = Color3.fromRGB(40, 40, 20)
+Title.Text = "🟣 HIMONO HUB v4.2 - AUTO LOAD FIXED"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 18
 Title.Parent = TitleBar
 
+-- Stealth Indicator
 local StealthIndicator = Instance.new("Frame")
 StealthIndicator.Size = UDim2.new(0, 12, 0, 12)
 StealthIndicator.Position = UDim2.new(1, -90, 0.5, -6)
-StealthIndicator.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+StealthIndicator.BackgroundColor3 = stealthMode and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
 StealthIndicator.Parent = TitleBar
 
 local StealthCorner = Instance.new("UICorner")
@@ -535,18 +458,39 @@ local StealthLabel = Instance.new("TextLabel")
 StealthLabel.Size = UDim2.new(0, 80, 1, 0)
 StealthLabel.Position = UDim2.new(1, -80, 0, 0)
 StealthLabel.BackgroundTransparency = 1
-StealthLabel.Text = "STEALTH: ON"
-StealthLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+StealthLabel.Text = stealthMode and "STEALTH: ON" or "STEALTH: OFF"
+StealthLabel.TextColor3 = stealthMode and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
 StealthLabel.Font = Enum.Font.Gotham
 StealthLabel.TextSize = 11
 StealthLabel.Parent = TitleBar
+
+-- NEW: Nút Ẩn UI (trên TitleBar của UI chính)
+local HideButton = Instance.new("TextButton")
+HideButton.Name = "HideButton"
+HideButton.Size = UDim2.new(0, 30, 0, 30)
+HideButton.Position = UDim2.new(1, -35, 0.5, -15)
+HideButton.BackgroundColor3 = Color3.fromRGB(160, 0, 255)
+HideButton.Text = "➖" 
+HideButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+HideButton.Font = Enum.Font.GothamBold
+HideButton.TextSize = 18
+HideButton.Parent = TitleBar
+
+local HideCorner = Instance.new("UICorner")
+HideCorner.CornerRadius = UDim.new(0, 6)
+HideCorner.Parent = HideButton
+
+SafeConnect(HideButton.MouseButton1Click, function()
+    ToggleUI(false)
+end)
+
 
 local TabContainer = Instance.new("ScrollingFrame")
 TabContainer.Size = UDim2.new(1, -20, 0, 40)
 TabContainer.Position = UDim2.new(0, 10, 0, 55)
 TabContainer.BackgroundTransparency = 1
 TabContainer.ScrollBarThickness = 3
-TabContainer.ScrollBarImageColor3 = Color3.fromRGB(180, 220, 40)
+TabContainer.ScrollBarImageColor3 = Color3.fromRGB(160, 0, 255)
 TabContainer.CanvasSize = UDim2.new(2, 0, 0, 0)
 TabContainer.Parent = MainContainer
 
@@ -558,7 +502,8 @@ TabListLayout.Parent = TabContainer
 local ContentContainer = Instance.new("Frame")
 ContentContainer.Size = UDim2.new(1, -20, 1, -120)
 ContentContainer.Position = UDim2.new(0, 10, 0, 105)
-ContentContainer.BackgroundColor3 = Color3.fromRGB(255, 255, 180)
+ContentContainer.BackgroundColor3 = Color3.fromRGB(200, 150, 255) -- Light Purple
+ContentContainer.BackgroundColor3 = Color3.fromRGB(200, 150, 255) 
 ContentContainer.Parent = MainContainer
 
 local ContentCorner = Instance.new("UICorner")
@@ -569,7 +514,7 @@ local ContentScroll = Instance.new("ScrollingFrame")
 ContentScroll.Size = UDim2.new(1, 0, 1, 0)
 ContentScroll.BackgroundTransparency = 1
 ContentScroll.ScrollBarThickness = 5
-ContentScroll.ScrollBarImageColor3 = Color3.fromRGB(180, 220, 40)
+ContentScroll.ScrollBarImageColor3 = Color3.fromRGB(160, 0, 255)
 ContentScroll.CanvasSize = UDim2.new(0, 0, 2, 0)
 ContentScroll.Parent = ContentContainer
 
@@ -577,18 +522,19 @@ local ContentLayout = Instance.new("UIListLayout")
 ContentLayout.Padding = UDim.new(0, 15)
 ContentLayout.Parent = ContentScroll
 
+-- UPDATED: Chỉ giữ các tab chính
 local tabs = {
-    "🏠 MAIN", "🗺️ DUNGEON", "🌾 FARM", "🎰 GACHA", "⚡ STATS", 
-    "🚀 TELEPORT", "🥚 OPEN EGG", "⚙️ SETTINGS", "🎯 ENEMIES"
+    "🏠 MAIN", "🌾 FARM", "🎰 GACHA", "⚡ STATS", 
+    "🚀 TELEPORT", "🥚 OPEN EGG", "⚙️ SETTINGS"
 }
 local tabFrames, tabButtons = {}, {}
 
 for i, tabName in pairs(tabs) do
     local tabButton = Instance.new("TextButton")
     tabButton.Size = UDim2.new(0, 120, 1, 0)
-    tabButton.BackgroundColor3 = i == 1 and Color3.fromRGB(255, 255, 40) or Color3.fromRGB(220, 255, 40)
+    tabButton.BackgroundColor3 = i == 1 and Color3.fromRGB(200, 100, 255) or Color3.fromRGB(120, 0, 200)
     tabButton.Text = tabName
-    tabButton.TextColor3 = Color3.fromRGB(40, 40, 20)
+    tabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     tabButton.Font = Enum.Font.GothamBold
     tabButton.TextSize = 12
     tabButton.Parent = TabContainer
@@ -601,7 +547,7 @@ for i, tabName in pairs(tabs) do
     contentFrame.Size = UDim2.new(1, 0, 1, 0)
     contentFrame.BackgroundTransparency = 1
     contentFrame.ScrollBarThickness = 5
-    contentFrame.ScrollBarImageColor3 = Color3.fromRGB(180, 220, 40)
+    contentFrame.ScrollBarImageColor3 = Color3.fromRGB(160, 0, 255)
     contentFrame.CanvasSize = UDim2.new(0, 0, 2, 0)
     contentFrame.Visible = i == 1
     contentFrame.Parent = ContentScroll
@@ -618,175 +564,133 @@ for i, tabName in pairs(tabs) do
             frame.Visible = (name == tabName)
         end
         for name, btn in pairs(tabButtons) do
-            btn.BackgroundColor3 = (name == tabName) and Color3.fromRGB(255, 255, 40) or Color3.fromRGB(220, 255, 40)
+            btn.BackgroundColor3 = (name == tabName) and Color3.fromRGB(200, 100, 255) or Color3.fromRGB(120, 0, 200)
         end
     end)
 end
 
+-- NEW: Hàm cập nhật toggle button
+local function UpdateToggleButton(toggleFrame, enabled)
+    local toggleBtn = toggleFrame:FindFirstChildOfClass("TextButton")
+    if toggleBtn then
+        toggleBtn.Text = enabled and "ON" or "OFF"
+        toggleBtn.BackgroundColor3 = enabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+    end
+end
 
--- -------------------------------------------------------------------
--- TAB DEFINITIONS - ADDING TOGGLES
--- -------------------------------------------------------------------
+function CreateToggleSwitch(text, description, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 50)
+    frame.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 0.5, 0)
+    label.Position = UDim2.new(0, 10, 0, 5)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+@@ -641,91 +699,90 @@
+    return frame
+end
 
 -- MAIN TAB
 local mainContent = tabFrames["🏠 MAIN"]
 local mainStatus = Instance.new("TextLabel")
 mainStatus.Size = UDim2.new(1, -20, 0, 30)
 mainStatus.BackgroundTransparency = 1
-mainStatus.Text = "🟡 Himono Hub đã sẵn sàng!"
-mainStatus.TextColor3 = Color3.fromRGB(40,40,20)
+mainStatus.Text = "🟣 AUTO-LOAD FIXED - Tất cả nút đều nhớ trạng thái!"
+mainStatus.TextColor3 = Color3.fromRGB(255, 255, 255)
 mainStatus.Font = Enum.Font.Gotham
 mainStatus.TextSize = 14
 mainStatus.Parent = mainContent
 
-local autoAttackToggle = CreateToggleSwitch(
-    "Enable Auto Attack", 
-    "Tự động tấn công kẻ địch gần nhất", 
-    false, 
-    function(enabled)
-        if enabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) else StopLoop("AutoAttack") end
-    end
-)
-autoAttackToggle.Parent = mainContent
+-- Biến lưu các toggle để có thể cập nhật sau
+local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
+local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame
 
-local autoFarmSelectedToggle = CreateToggleSwitch(
-    "Enable Auto Farm Selected Enemies", 
-    "Tự động farm các kẻ địch đã chọn", 
-    false, 
-    function(enabled)
-        if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.5) else StopLoop("FarmSelected") end
-    end
-)
-autoFarmSelectedToggle.Parent = mainContent
+autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
+    autoAttackEnabled = enabled
+    if enabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) else StopLoop("AutoAttack") end
+end)
+autoAttackToggleFrame.Parent = mainContent
 
-local autoFarmRandomToggle = CreateToggleSwitch(
-    "Enable Farm Random Enemies", 
-    "Tự động farm ngẫu nhiên", 
-    false, 
-    function(enabled)
-        if enabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) else StopLoop("FarmRandom") end
-    end
-)
-autoFarmRandomToggle.Parent = mainContent
+autoFarmSelectedToggleFrame = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên (SPEED: 0.1s)", false, function(enabled)
+    selectedFarmEnabled = enabled
+    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) else StopLoop("FarmSelected") end 
+end)
+autoFarmSelectedToggleFrame.Parent = mainContent
 
-local autoDropsToggle = CreateToggleSwitch(
-    "Enable Auto Collect All Drops", 
-    "Tự động nhặt vật phẩm quanh bạn", 
-    false, 
-    function(enabled)
-        if enabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) else StopLoop("AutoCollect") end
-    end
-)
-autoDropsToggle.Parent = mainContent
+autoFarmRandomToggleFrame = CreateToggleSwitch("Enable Farm Random Enemies", "Tự động farm ngẫu nhiên", false, function(enabled)
+    farmRandomEnabled = enabled
+    if enabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) else StopLoop("FarmRandom") end
+end)
+autoFarmRandomToggleFrame.Parent = mainContent
 
--- AUTO REBIRTH
-local autoRebirthToggle = CreateToggleSwitch(
-    "Enable Auto Rebirth", 
-    "Tự động RankUp/Rebirth khi có thể", 
-    false, 
-    function(enabled)
-        if enabled then StartLoop("AutoRebirth", AutoRebirthLogic, 10) -- Kiểm tra mỗi 10 giây
-        else StopLoop("AutoRebirth") end
-    end
-)
-autoRebirthToggle.Parent = mainContent
-
--- DUNGEON TAB
-local dungeonContent = tabFrames["🗺️ DUNGEON"]
-
-local autoJoinDungeonToggle = CreateToggleSwitch(
-    "Enable Auto Join Dungeon Easy", 
-    "Tự động gửi yêu cầu vào Dungeon Easy.", 
-    false, 
-    function(enabled)
-        if enabled then 
-            isDungeonActive = true -- Kích hoạt cờ ngắt farm map
-            SaveAndStopFarmLoops() -- Lưu và dừng các loop farm map
-            
-            StartLoop("AutoJoinDungeon", AutoJoinDungeonEasyLogic, 15) -- Thử join mỗi 15s
-        else 
-            StopLoop("AutoJoinDungeon")
-            -- Giữ cờ isDungeonActive nếu Auto Farm Dungeon vẫn bật
-            isDungeonActive = activeLoops["AutoFarmDungeon"] or false 
-            
-            if not isDungeonActive then 
-                -- Nếu cả Join và Farm đều OFF, khôi phục farm map
-                RestoreFarmLoops() 
-            end
-        end
-    end
-)
-autoJoinDungeonToggle.Parent = dungeonContent
-
-local autoFarmDungeonToggle = CreateToggleSwitch(
-    "Enable Auto Farm Dungeon", 
-    "Tự động Teleport và farm quái trong Dungeon.", 
-    false, 
-    function(enabled)
-        autoDungeonFarmEnabled = enabled
-        if enabled then 
-            isDungeonActive = true -- Kích hoạt cờ ngắt farm map
-            SaveAndStopFarmLoops() -- Lưu và dừng các loop farm map
-            
-            StartLoop("AutoFarmDungeon", AutoFarmDungeonLogic, 0.4) -- Farm nhanh
-        else 
-            StopLoop("AutoFarmDungeon")
-            -- Chỉ tắt cờ isDungeonActive nếu Auto Join Dungeon cũng OFF
-            isDungeonActive = activeLoops["AutoJoinDungeon"] or false 
-            
-            if not isDungeonActive then 
-                 -- Nếu cả Join và Farm đều OFF, khôi phục farm map
-                RestoreFarmLoops()
-            end
-        end
-    end
-)
-autoFarmDungeonToggle.Parent = dungeonContent
-
+autoDropsToggleFrame = CreateToggleSwitch("Enable Auto Collect All Drops", "Tự động nhặt vật phẩm quanh bạn", false, function(enabled)
+    autoCollectEnabled = enabled
+    if enabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) else StopLoop("AutoCollect") end
+end)
+autoDropsToggleFrame.Parent = mainContent
 
 -- FARM TAB
 local farmContent = tabFrames["🌾 FARM"]
-local selectEnemyBtn = CreateActionButton("Select Enemies to Farm", "Chọn kẻ địch để farm", function()
-    local enemies = RefreshEnemiesList()
-    local items = {}
-    for _, enemy in ipairs(enemies) do table.insert(items, enemy.Name) end
-    local combo = CreateComboBox("Enemy List", "Chọn enemy để farm", items, function(selected)
-        for _, enemy in ipairs(enemies) do
-            if enemy.Name == selected then
-                table.insert(selectedEnemyPositions, enemy.Position)
-            end
+
+-- NEW: Refresh enemy groups display
+local refreshGroupsBtn = CreateActionButton("Refresh Enemy Groups", "Quét và hiển thị enemy theo nhóm", function()
+    for _, child in pairs(farmContent:GetChildren()) do
+        if child:IsA("Frame") and string.find(child.Name or "", "GroupFrame") then
+            child:Destroy()
         end
-    end)
-    combo.Parent = farmContent
-end)
-selectEnemyBtn.Parent = farmContent
+    end
 
-local refreshBtn = CreateActionButton("Refresh Enemy List", "Tap this to refresh enemies", function()
-    print("🔄 Refreshed enemy list!")
-end)
-refreshBtn.Parent = farmContent
+    local enemyGroups = GetEnemyGroups()
 
--- GACHA TAB
-local gachaContent = tabFrames["🎰 GACHA"]
-local gachaTypes = {"Biju", "Sayajin", "Race", "Haki", "Fruits"}
-local gachaCombo = CreateComboBox("Gacha Type", "Chọn loại gacha để roll", gachaTypes, function(selected)
-    selectedGachaType = selected
-end)
-gachaCombo.Parent = gachaContent
+    for enemyName, group in pairs(enemyGroups) do
+        local groupFrame = Instance.new("Frame")
+        groupFrame.Name = "GroupFrame_" .. enemyName
+        groupFrame.Size = UDim2.new(1, 0, 0, 60)
+        groupFrame.BackgroundColor3 = Color3.fromRGB(180, 120, 255)
+        groupFrame.Parent = farmContent
+
+        local cornerRadius = Instance.new("UICorner")
+        cornerRadius.CornerRadius = UDim.new(0, 6)
+        cornerRadius.Parent = groupFrame
+
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Size = UDim2.new(0.6, 0, 0.5, 0)
+        nameLabel.Position = UDim2.new(0, 10, 0, 5)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = "👹 " .. enemyName
+        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextSize = 14
+        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        nameLabel.Parent = groupFrame
+
+        local infoLabel = Instance.new("TextLabel")
+        infoLabel.Size = UDim2.new(0.6, 0, 0.5, 0)
+        infoLabel.Position = UDim2.new(0, 10, 0.5, 0)
+        infoLabel.BackgroundTransparency = 1
+        infoLabel.Text = "📊 Số lượng: " .. group.count .. " | Khoảng cách: " .. math.floor(group.nearestDistance) .. "m"
+        infoLabel.TextColor3 = Color3.fromRGB(230, 230, 255)
+        infoLabel.Font = Enum.Font.Gotham
+        infoLabel.TextSize = 11
+        infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+        infoLabel.Parent = groupFrame
+
+        local selectBtn = Instance.new("TextButton")
+        selectBtn.Size = UDim2.new(0.3, 0, 0.6, 0)
+        selectBtn.Position = UDim2.new(0.65, 0, 0.2, 0)
+@@ -805,168 +862,171 @@
 
 for _, gacha in ipairs(gachaTypes) do
-    local toggle = CreateToggleSwitch(
-        "Enable Auto Roll " .. gacha, 
-        "Tự động roll " .. gacha, 
-        false, 
-        function(enabled)
-            if enabled then
-                StartLoop("AutoRoll"..gacha, function() StartGacha(gacha) end, 2)
-            else
-                StopLoop("AutoRoll"..gacha)
-            end
+    local toggle = CreateToggleSwitch("Enable Auto Roll " .. gacha, "Tự động roll " .. gacha, false, function(enabled)
+        if enabled then
+            StartLoop("AutoRoll"..gacha, function() StartGacha(gacha) end, 2)
+        else
+            StopLoop("AutoRoll"..gacha)
         end
-    )
+    end)
     toggle.Parent = gachaContent
 end
 
@@ -823,60 +727,85 @@ local openEggBtn = CreateActionButton("Open Egg", "Mở egg gần bạn", functi
 end)
 openEggBtn.Parent = eggContent
 
-local autoOpenEggToggle = CreateToggleSwitch(
-    "Enable Auto Open Egg", 
-    "Tự động mở egg khi gần", 
-    false, 
-    function(enabled)
-        autoOpenEggEnabled = enabled
-        if enabled then
-            StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2)
-        else
-            StopLoop("AutoOpenEgg")
-        end
+-- FIXED: Auto Open Egg với logic kiểm tra khoảng cách
+autoOpenEggToggleFrame = CreateToggleSwitch("Enable Auto Open Egg", "Tự động mở egg khi gần (15m)", false, function(enabled)
+    autoOpenEggEnabled = enabled
+    if enabled then
+        StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2)
+    else
+        StopLoop("AutoOpenEgg")
     end
-)
-autoOpenEggToggle.Parent = eggContent
+end)
+autoOpenEggToggleFrame.Parent = eggContent
 
 -- SETTINGS TAB
 local settingsContent = tabFrames["⚙️ SETTINGS"]
-local antiAfkToggle = CreateToggleSwitch(
-    "Enable Anti-AFK", 
-    "Chống kick khi AFK", 
-    true, 
-    function(enabled)
-        if enabled then EnableAntiAFK() end
-    end
-)
-antiAfkToggle.Parent = settingsContent
-
-local stealthToggle = CreateToggleSwitch(
-    "Enable Stealth Mode", 
-    "Ẩn hoạt động khỏi server", 
-    true, 
-    function(enabled)
-        stealthMode = enabled
-    end
-)
-stealthToggle.Parent = settingsContent
-
--- ENEMIES TAB
-local enemiesContent = tabFrames["🎯 ENEMIES"]
-local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh sách kẻ địch", function()
-    for _, child in pairs(enemiesContent:GetChildren()) do
-        if child:IsA("Frame") and child ~= refreshEnemiesBtn then child:Destroy() end
-    end
-    local enemies = RefreshEnemiesList()
-    for _, enemy in ipairs(enemies) do
-        local combo = CreateComboBox("Enemy: " .. enemy.Name, "Chọn để farm hoặc bỏ qua", {enemy.Name, "Bỏ qua"}, function(selected)
-            if selected == enemy.Name then
-                table.insert(selectedEnemyPositions, enemy.Position)
-            end
-        end)
-        combo.Parent = enemiesContent
-    end
+antiAfkToggleFrame = CreateToggleSwitch("Enable Anti-AFK", "Chống kick khi AFK", true, function(enabled)
+    antiAFKEnabled = enabled
+    if enabled then EnableAntiAFK() else DisableAntiAFK() end
 end)
-refreshEnemiesBtn.Parent = enemiesContent
+antiAfkToggleFrame.Parent = settingsContent
+
+stealthToggleFrame = CreateToggleSwitch("Enable Stealth Mode", "Ẩn hoạt động khỏi server", true, function(enabled)
+    stealthMode = enabled
+    stealthModeEnabled = enabled
+    StealthIndicator.BackgroundColor3 = enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    StealthLabel.Text = enabled and "STEALTH: ON" or "STEALTH: OFF"
+    StealthLabel.TextColor3 = enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+end)
+stealthToggleFrame.Parent = settingsContent
+
+-- FIXED: Thêm nút Config vào SETTINGS
+-- Thêm nút Config vào SETTINGS
+local saveConfigBtn = CreateActionButton("Save Config", "Lưu lại cấu hình hiện tại", function()
+    SaveConfig()
+    mainStatus.Text = "💾 Đã lưu cấu hình!"
+end)
+saveConfigBtn.Parent = settingsContent
+
+local loadConfigBtn = CreateActionButton("Load Config", "Tải lại cấu hình đã lưu", function()
+    LoadConfig()
+    ApplyLoadedConfig()
+    mainStatus.Text = "📂 Đã tải cấu hình!"
+end)
+loadConfigBtn.Parent = settingsContent
+
+local deleteConfigBtn = CreateActionButton("Delete Config", "Xóa file config đã lưu", function()
+    DeleteConfig()
+    mainStatus.Text = "🗑️ Đã xóa cấu hình!"
+end)
+deleteConfigBtn.Parent = settingsContent
+
+-- NEW: Hàm áp dụng config đã load
+local function ApplyLoadedConfig()
+    -- Cập nhật tất cả các nút toggle
+    UpdateToggleButton(autoAttackToggleFrame, autoAttackEnabled)
+    UpdateToggleButton(autoFarmSelectedToggleFrame, selectedFarmEnabled)
+    UpdateToggleButton(autoFarmRandomToggleFrame, farmRandomEnabled)
+    UpdateToggleButton(autoDropsToggleFrame, autoCollectEnabled)
+    UpdateToggleButton(stealthToggleFrame, stealthModeEnabled)
+    UpdateToggleButton(antiAfkToggleFrame, antiAFKEnabled)
+    UpdateToggleButton(autoOpenEggToggleFrame, autoOpenEggEnabled)
+
+    -- Cập nhật stealth indicator
+    StealthIndicator.BackgroundColor3 = stealthMode and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    StealthLabel.Text = stealthMode and "STEALTH: ON" or "STEALTH: OFF"
+    StealthLabel.TextColor3 = stealthMode and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+
+    -- Kích hoạt các vòng lặp nếu cần
+    if autoAttackEnabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) end
+    if selectedFarmEnabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) end
+    if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
+    if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
+    if autoOpenEggEnabled then StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2) end
+    if antiAFKEnabled then EnableAntiAFK() else DisableAntiAFK() end
+
+    -- Refresh farm display nếu đang ở tab FARM
+    if farmContent.Visible then
+    if tabFrames["🌾 FARM"].Visible then
+        refreshGroupsBtn.MouseButton1Click:Fire()
+    end
+end
 
 -- DRAG FUNCTIONALITY
 local dragging, dragInput, dragStart, startPos
@@ -904,8 +833,14 @@ SafeConnect(UserInputService.InputChanged, function(input)
     end
 end)
 
-EnableAntiAFK()
+-- NEW: Phím tắt Insert để ẩn/hiện UI
+SafeConnect(UserInputService.InputBegan, function(input, gameProcessedEvent)
+    if input.KeyCode == Enum.KeyCode.Insert and not gameProcessedEvent then
+        ToggleUI(not HimonoHub.Enabled)
+    end
+end)
 
+-- Auto-adjust canvas sizes
 task.spawn(function()
     while true do
         for _, frame in pairs(tabFrames) do
@@ -916,5 +851,14 @@ task.spawn(function()
     end
 end)
 
+-- Initialize
+LoadConfig() -- Tải config trước
+ApplyLoadedConfig() -- Áp dụng config đã load
+LoadConfig() 
+ApplyLoadedConfig()
 
-print("🟡 Himono Hub v4.2 - SULFUR EDITION LOADED! (Dungeon & Rebirth ready)")
+print("🟣 HIMONO HUB v4.2 - AUTO LOAD FIXED EDITION LOADED!")
+print("✅ TẤT CẢ nút toggle đều nhớ trạng thái khi load lại!")
+print("⚡ Tốc độ farm: 0.1s - Target Rotation Mode")
+print("💾 Config system hoàn chỉnh")
+print("🟣 HIMONO HUB v4.2 - FULLY LOADED!")
