@@ -1,4 +1,4 @@
--- HIMONO HUB v4.7 - FINAL FIX (Fixed Memory Leak, Auto-Load, Full Stability)
+-- HIMONO HUB v4.7 - FINAL STABLE EDITION (Fixed Memory Leak, Auto-Load, Full Stability)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -19,10 +19,6 @@ local Config = {
     FarmInterval = 0.1,
     TeleportCooldown = 2,
     MaxCollectPerFrame = 10,
-    RemotePatterns = {
-        Reply = {"Reply"},
-        Attack = {"RemoteEvent", "Remote"}
-    },
     Zones = {
         ["Shinobi Village"] = "Naruto",
         ["Namek Planet"] = "DragonBall",
@@ -47,7 +43,7 @@ table.sort(sortedZoneKeys)
 -- ===================================================================
 
 local stealthMode = Config.StealthMode
-local safeConnections = {} -- FIX Memory Leak
+local safeConnections = {} -- FIX Memory Leak: Lưu trữ tất cả kết nối
 local activeLoops = {}
 local selectedEnemyNames = {}
 local selectedGachaType = Config.GachaTypes[1] or "Biju"
@@ -96,7 +92,7 @@ end
 
 local function SafeFire(remote, ...)
     if remote and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
-        if stealthMode then wait(0.1) end
+        if stealthMode then task.wait(0.1) end -- Dùng task.wait cho Executor hiện đại
         pcall(function()
             remote:FireServer(...)
         end)
@@ -104,10 +100,10 @@ local function SafeFire(remote, ...)
 end
 
 local function SafeWait()
-    if not stealthMode then wait(); return end
+    if not stealthMode then task.wait(); return end
     math.randomseed(tick())
     local delay = math.random(20, 50) / 100
-    wait(delay)
+    task.wait(delay) -- Dùng task.wait
 end
 
 local function SafeCall(func, ...)
@@ -128,17 +124,17 @@ local function SafeConnect(signal, callback)
         if stealthMode then SafeWait() end
         SafeCall(callback, ...)
     end)
-    table.insert(safeConnections, conn)
+    table.insert(safeConnections, conn) -- Lưu kết nối
     return conn
 end
 
 local function StartLoop(name, func, interval)
-    if activeLoops[name] then activeLoops[name] = false; wait(0.1) end
+    if activeLoops[name] then activeLoops[name] = false; task.wait(0.1) end
     activeLoops[name] = true
-    spawn(function()
+    task.spawn(function() -- Dùng task.spawn
         while activeLoops[name] do
             SafeCall(func)
-            if interval then wait(interval) else RunService.Heartbeat:Wait() end
+            if interval then task.wait(interval) else RunService.Heartbeat:Wait() end
         end
     end)
 end
@@ -189,7 +185,7 @@ local function FindEnemiesInRange(range)
 
     local playerPos = root.Position
 
-    -- FIX: Dùng GetDescendants() để tìm quái vật trong Folder/Model
+    -- FIX: Dùng GetDescendants() để tìm quái vật trong mọi Model/Folder
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("Head") then
             local isPlayer = false
@@ -267,12 +263,12 @@ local function FarmSelectedLogic()
             root.CFrame = CFrame.new(target.Position + offset)
 
             SafeFire(remote, "Attack", target.Model)
-            wait(0.05) 
+            task.wait(0.05) 
 
-            if not activeLoops["FarmSelected"] then break end
+            if not activeLoops["FarmSelected"] then break end -- FIX: Kiểm tra lại sau delay
             SafeFire(remote, "Attack", target.Model)
         end
-        wait(0.05)
+        task.wait(0.05)
     end
 end
 
@@ -340,7 +336,7 @@ local function StartGacha(gachaType)
     local remote = GetReplyRemote()
     if remote then
         SafeFire(remote, "Crate Roll Start", {[1] = gachaType, [2] = true})
-        wait(1)
+        task.wait(1)
         SafeFire(remote, "Crate Roll Stop")
     end
 end
@@ -374,7 +370,7 @@ local function StartAutoRollLoop(gachaName)
 end
 
 -- ===================================================================
--- V. SAVE/LOAD CONFIG (FIXED)
+-- V. SAVE/LOAD CONFIG
 -- ===================================================================
 
 local function SaveConfig()
@@ -395,7 +391,7 @@ local function SaveConfig()
     }
     local encoded = HttpService:JSONEncode(data)
     writefile(configFile, encoded)
-end
+}
 
 local function LoadConfig()
     if isfile(configFile) then
@@ -466,7 +462,7 @@ local function CreateLabel(text, size, position, parent, bold, fontSize, color)
 end
 
 local function UpdateToggleButton(toggleFrame, enabled)
-    local toggleBtn = toggleFrame:FindFirstChildOfClass("TextButton")
+    local toggleBtn = toggleFrame:FindFirstChild("ToggleButton") -- Tìm nút bằng tên đã đặt
     if toggleBtn then
         toggleBtn.Text = enabled and "ON" or "OFF"
         toggleBtn.BackgroundColor3 = enabled and COLOR_ON or COLOR_OFF
@@ -482,7 +478,7 @@ function CreateToggleSwitch(text, description, default, callback)
     local desc = CreateLabel(description, UDim2.new(0.8, 0, 0.5, 0), UDim2.new(0, 10, 0.5, 0), frame, false, 11, COLOR_TEXT_DIM)
 
     local toggleButton = Instance.new("TextButton")
-    toggleButton.Name = "ToggleButton"
+    toggleButton.Name = "ToggleButton" -- Đặt tên để dễ tìm kiếm khi Load/Update
     toggleButton.Size = UDim2.new(0, 65, 0, 28)
     toggleButton.Position = UDim2.new(1, -75, 0.5, -14)
     toggleButton.TextColor3 = COLOR_TEXT
@@ -562,7 +558,7 @@ function CreateComboBox(text, description, items, callback)
     local selected = items[1]
     
     SafeConnect(dropdown.MouseButton1Click, function()
-        -- FIX: Sử dụng ScrollingFrame để hiển thị menu
+        -- FIX: Dùng ScrollingFrame và ListLayout để menu hiển thị chính xác
         local menu = Instance.new("ScrollingFrame")
         menu.Size = UDim2.new(0.4, 0, 0, math.min(#items * 28, 200))
         menu.Position = UDim2.new(0.55, 0, 0.75, 0)
@@ -657,7 +653,7 @@ TitleBar.Size = UDim2.new(1, 0, 0, 40)
 TitleBar.BackgroundColor3 = COLOR_PRIMARY
 TitleBar.Parent = MainContainer
 
-local Title = CreateLabel("🟣 HIMONO HUB v4.7 - FINAL FIX", UDim2.new(1, -100, 1, 0), UDim2.new(0, 15, 0, 0), TitleBar, true, 16, COLOR_ACCENT)
+local Title = CreateLabel("🟣 HIMONO HUB v4.7 - FINAL STABLE", UDim2.new(1, -100, 1, 0), UDim2.new(0, 15, 0, 0), TitleBar, true, 16, COLOR_ACCENT)
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
 local StealthIndicator = Instance.new("Frame")
@@ -821,7 +817,7 @@ CreateLabel("ENEMY SELECTOR:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), f
 CreateActionButton("Clear Selected (" .. #selectedEnemyNames .. "x)", "Xóa tất cả kẻ địch đã chọn", function()
     selectedEnemyNames = {}
     -- Cần refresh UI sau khi xóa
-    refreshEnemiesBtn:FindFirstChildOfClass("TextButton"):GetMouseClick():Fire() 
+    refreshEnemiesBtn:FindFirstChildOfClass("TextButton").MouseButton1Click:Fire() 
 end, farmContent)
 
 refreshEnemiesBtn = CreateActionButton("Refresh/Scan Enemies", "Quét lại kẻ địch trong phạm vi 500 stud", function()
@@ -849,7 +845,11 @@ refreshEnemiesBtn = CreateActionButton("Refresh/Scan Enemies", "Quét lại kẻ
             isSelected, 
             function(enabled)
                 if enabled then
-                    if not table.find(selectedEnemyNames, name) then table.insert(selectedEnemyNames, name) end
+                    local found = false
+                    for _, n in ipairs(selectedEnemyNames) do
+                        if n == name then found = true; break end
+                    end
+                    if not found then table.insert(selectedEnemyNames, name) end
                 else
                     for i, n in ipairs(selectedEnemyNames) do
                         if n == name then table.remove(selectedEnemyNames, i); break end
@@ -1081,9 +1081,9 @@ local function ApplyLoadedConfig()
 end
 
 -- Auto-adjust canvas sizes
-spawn(function()
+task.spawn(function()
     while HimonoHub.Parent do
-        wait(0.5)
+        task.wait(0.5)
         for _, frame in pairs(tabFrames) do
             local layout = frame:FindFirstChildOfClass("UIListLayout")
             if layout then
