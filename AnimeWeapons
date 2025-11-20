@@ -17,10 +17,10 @@ local Config = {
     DungeonJoinInterval = 15,
     TeleportCooldown = 2,
     MaxCollectPerFrame = 10,
-    FarmInterval = 0.1, -- MAX SPEED
+    FarmInterval = 0.1, 
     RemotePatterns = {
         Reply = {"Reply"},
-        Attack = {"RemoteEvent", "Remote"} -- Sử dụng tên remote chung
+        Attack = {"RemoteEvent", "Remote"} 
     },
     Zones = {
         ["Shinobi Village"] = "Naruto",
@@ -64,7 +64,8 @@ local lastZone = selectedZone
 local cachedEnemies = {}
 local lastEnemyRefresh = 0
 local lastTeleportTime = 0 
-local HimonoHub, HimonoMini -- Khai báo cho Toggle UI
+local HimonoHub, HimonoMini 
+local TitleBar 
 
 -- ===================================================================
 -- III. CORE UTILITIES
@@ -231,7 +232,6 @@ local function RefreshEnemiesList()
     return FindEnemiesInRange(500)
 end
 
--- FarmSelected Logic (Dựa trên Name & Burst Attack)
 local function FarmSelectedLogic()
     if isDungeonActive or not ValidatePlayerState() then return end
     if #selectedEnemyNames == 0 then return end
@@ -280,15 +280,16 @@ local function FarmSelectedLogic()
     end
 end
 
--- Auto Attack Logic (Đứng yên nếu quái gần)
+-- SỬA LOGIC: ĐỨNG YÊN TẠI CHỖ
 local function AutoAttackLogic()
     if isDungeonActive or not ValidatePlayerState() then return end
     local enemies = FindEnemiesInRange(Config.AttackRange)
     if #enemies > 0 then
         local nearestEnemy = enemies[1]
+        
         local remote = GetAttackRemote()
         if remote then 
-            -- CHỈ FIRE REMOTE MÀ KHÔNG TELEPORT
+            -- CHỈ FIRE REMOTE MÀ KHÔNG TELEPORT HOẶC DI CHUYỂN
             SafeFire(remote, "Attack", nearestEnemy.Model) 
         end
     end
@@ -518,7 +519,6 @@ local function CreateLabel(text, size, position, parent, bold, fontSize, color)
     return label
 end
 
--- SỬA LỖI 1: Thêm 'parent' vào tham số và gán frame.Parent
 function CreateToggleSwitch(text, description, default, callback, parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 0, 50)
@@ -566,7 +566,6 @@ function CreateToggleSwitch(text, description, default, callback, parent)
     return frame
 end
 
--- SỬA LỖI 1: Thêm 'parent' vào tham số và gán frame.Parent
 function CreateActionButton(text, description, callback, parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 0, 50)
@@ -597,7 +596,6 @@ function CreateActionButton(text, description, callback, parent)
     return frame
 end
 
--- SỬA LỖI 1: Thêm 'parent' vào tham số và gán frame.Parent
 function CreateComboBox(text, description, items, callback, parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 0, 60)
@@ -871,7 +869,7 @@ local farmContent = tabFrames["🌾 FARM"]
 CreateLabel("FARMING METHODS (Speed: " .. Config.FarmInterval .. "s):", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), farmContent, true, 16, COLOR_ACCENT)
 
 local autoFarmSelectedToggle = CreateToggleSwitch(
-    "Auto Farm Selected Positions", "Farm tại các vị trí đã đánh dấu trong tab ENEMIES", false, 
+    "Auto Farm Selected Enemies", "Farm TẤT CẢ enemy cùng tên (Burst Attack)", false, 
     function(enabled)
         if enabled then StartLoop("FarmSelected", FarmSelectedLogic, Config.FarmInterval) else StopLoop("FarmSelected") end
     end, farmContent
@@ -879,7 +877,7 @@ local autoFarmSelectedToggle = CreateToggleSwitch(
 autoFarmSelectedToggle.Parent = farmContent
 
 local autoFarmRandomToggle = CreateToggleSwitch(
-    "Farm Random Enemies", "Tự động farm ngẫu nhiên kẻ địch trong phạm vi", false, 
+    "Farm Random Enemies", "Tự động Teleport và farm ngẫu nhiên", false, 
     function(enabled)
         if enabled then StartLoop("FarmRandom", FarmRandomLogic, Config.FarmInterval) else StopLoop("FarmRandom") end
     end, farmContent
@@ -1127,4 +1125,4 @@ task.spawn(function()
 end)
 
 
-print("👑 Himono Hub v4.7 - STABILITY FIXED LOADED! (Ready)")
+print("👑 Himono Hub v4.7 - FINAL STABILITY FIXED LOADED! (Ready)")
