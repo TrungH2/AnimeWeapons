@@ -1,4 +1,4 @@
--- Himono Hub v4.2 - SULFUR EDITION (UPDATED)
+-- Himono Hub v4.2 - SULFUR EDITION (COMPLETE FIXED VERSION)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -118,7 +118,7 @@ local function FindEnemiesInRange(range)
     return enemies
 end
 
--- NEW: Group enemies by name
+-- Group enemies by name
 local function GetEnemyGroups()
     local enemies = FindEnemiesInRange(200)
     local groups = {}
@@ -156,7 +156,7 @@ local function AutoAttackLogic()
     end
 end
 
--- IMPROVED: Faster farm selected with anti-cheat protection
+-- Faster farm selected with anti-cheat protection
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
     local character = LocalPlayer.Character
@@ -198,7 +198,7 @@ local function FarmSelectedLogic()
                     for i = 1, 3 do
                         if activeLoops["FarmSelected"] and nearestEnemy and nearestEnemy:FindFirstChild("Humanoid") and nearestEnemy.Humanoid.Health > 0 then
                             SafeFire(remote, "Attack", nearestEnemy)
-                            task.wait(0.1) -- Faster attacks
+                            task.wait(0.1)
                         else
                             break
                         end
@@ -331,7 +331,7 @@ HimonoHub.Parent = game.CoreGui
 local MainContainer = Instance.new("Frame")
 MainContainer.Size = UDim2.new(0, 600, 0, 500)
 MainContainer.Position = UDim2.new(0.5, -300, 0.5, -250)
-MainContainer.BackgroundColor3 = Color3.fromRGB(120, 0, 200) -- Purple
+MainContainer.BackgroundColor3 = Color3.fromRGB(120, 0, 200)
 MainContainer.BorderSizePixel = 0
 MainContainer.Parent = HimonoHub
 
@@ -341,7 +341,7 @@ ContainerCorner.Parent = MainContainer
 
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 45)
-TitleBar.BackgroundColor3 = Color3.fromRGB(80, 0, 160) -- Dark Purple
+TitleBar.BackgroundColor3 = Color3.fromRGB(80, 0, 160)
 TitleBar.Parent = MainContainer
 
 local TitleCorner = Instance.new("UICorner")
@@ -394,7 +394,7 @@ TabListLayout.Parent = TabContainer
 local ContentContainer = Instance.new("Frame")
 ContentContainer.Size = UDim2.new(1, -20, 1, -120)
 ContentContainer.Position = UDim2.new(0, 10, 0, 105)
-ContentContainer.BackgroundColor3 = Color3.fromRGB(200, 150, 255) -- Light Purple
+ContentContainer.BackgroundColor3 = Color3.fromRGB(200, 150, 255)
 ContentContainer.Parent = MainContainer
 
 local ContentCorner = Instance.new("UICorner")
@@ -413,7 +413,6 @@ local ContentLayout = Instance.new("UIListLayout")
 ContentLayout.Padding = UDim.new(0, 15)
 ContentLayout.Parent = ContentScroll
 
--- UPDATED: Removed ENEMIES tab, only keep these tabs
 local tabs = {
     "🏠 MAIN", "🌾 FARM", "🎰 GACHA", "⚡ STATS", 
     "🚀 TELEPORT", "🥚 OPEN EGG", "⚙️ SETTINGS"
@@ -652,7 +651,7 @@ autoDropsToggle.Parent = mainContent
 -- FARM TAB
 local farmContent = tabFrames["🌾 FARM"]
 
--- NEW: Refresh enemy groups display
+-- Refresh enemy groups display
 local refreshGroupsBtn = CreateActionButton("Refresh Enemy Groups", "Quét và hiển thị enemy theo nhóm", function()
     for _, child in pairs(farmContent:GetChildren()) do
         if child:IsA("Frame") and string.find(child.Name or "", "GroupFrame") then
@@ -751,7 +750,6 @@ refreshGroupsBtn.Parent = farmContent
 
 local clearFarmBtn = CreateActionButton("Clear Farm List", "Xóa danh sách enemy được chọn", function()
     selectedEnemyNames = {}
-    -- Refresh display to update buttons
     refreshGroupsBtn.MouseButton1Click:Fire()
 end)
 clearFarmBtn.Parent = farmContent
@@ -842,7 +840,7 @@ local stealthToggle = CreateToggleSwitch("Enable Stealth Mode", "Ẩn hoạt đ�
 end)
 stealthToggle.Parent = settingsContent
 
--- MOVED: Config buttons to SETTINGS tab
+-- Config buttons in SETTINGS tab
 local saveConfigBtn = CreateActionButton("Save Config", "Lưu lại cấu hình hiện tại", function()
     SaveConfig()
     mainStatus.Text = "💾 Đã lưu cấu hình!"
@@ -852,7 +850,6 @@ saveConfigBtn.Parent = settingsContent
 local loadConfigBtn = CreateActionButton("Load Config", "Tải lại cấu hình đã lưu", function()
     LoadConfig()
     mainStatus.Text = "📂 Đã tải cấu hình!"
-    -- Refresh farm display
     if farmContent.Visible then
         refreshGroupsBtn.MouseButton1Click:Fire()
     end
@@ -907,6 +904,3 @@ EnableAntiAFK()
 LoadConfig()
 
 print("🟣 Himono Hub v4.2 - PURPLE EDITION LOADED!")
-print("✅ Farm theo nhóm enemy - Chọn 1 lần, farm tất cả!")
-print("✅ Auto open egg chỉ khi gần - Chống spam!")
-print("✅ Giao diện màu tím - Đẹp và mới lạ!")
