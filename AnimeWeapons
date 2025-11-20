@@ -1,8 +1,9 @@
+-- Himono Hub v4.7 - PURPLE EDITION (FIXED VERSION)
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 -- ===================================================================
@@ -14,22 +15,15 @@ local Config = {
     AttackRange = 50, 
     CollectRange = 20, 
     EnemyRefreshRate = 0.5,
-    RebirthCheckInterval = 10,
-    DungeonJoinInterval = 15,
+    FarmInterval = 0.1,
     TeleportCooldown = 2,
     MaxCollectPerFrame = 10,
-    FarmInterval = 0.1, 
-    RemotePatterns = {
-        Reply = {"Reply"},
-        Attack = {"RemoteEvent", "Remote"} 
-    },
     Zones = {
         ["Shinobi Village"] = "Naruto",
-        ["Namek Planet"] = "DragonBall",
+        ["Namek Planet"] = "DragonBall", 
         ["Desert Land"] = "OnePiece",
         ["Demon Land"] = "DemonSlayer",
         ["Dungeon Easy"] = "Dungeon:1",
-        ["Dungeon Teleport"] = "Dungeon", 
         ["Zone 1"] = "Zone 1", 
         ["Zone 2"] = "Zone 2", 
         ["Zone 3"] = "Zone 3", 
@@ -54,49 +48,40 @@ local selectedEnemyNames = {}
 local selectedGachaType = Config.GachaTypes[1] or "Biju"
 local selectedStat = Config.StatTypes[1] or "Damage"
 local selectedZone = sortedZoneKeys[1] or "Zone 1"
-local isDungeonActive = false
-local autoDungeonFarmEnabled = false
-local isPlayerInDungeon = false
-local wasAutoAttackEnabled = false
-local wasFarmSelectedEnabled = false
-local wasFarmRandomEnabled = false
-local wasAutoCollectEnabled = false
-local lastZone = selectedZone
-local cachedEnemies = {}
-local lastEnemyRefresh = 0
 local lastTeleportTime = 0 
 local HimonoHub, HimonoMini 
-local TitleBar 
-local MainContainer
-local MiniButton
+local TitleBar, MainContainer, MiniButton
 
 -- ===================================================================
--- III. CORE UTILITIES
+-- III. CORE UTILITIES (FIXED)
 -- ===================================================================
 
 local function GetReplyRemote()
-    local replyRemote = ReplicatedStorage:FindFirstChild(Config.RemotePatterns.Reply[1])
-    if replyRemote then
-        return replyRemote:FindFirstChild("Reliable")
+    for _, name in pairs({"Reply", "ReplicatedStorage", "MainRemote"}) do
+        local remote = ReplicatedStorage:FindFirstChild(name)
+        if remote then
+            local reliable = remote:FindFirstChild("Reliable")
+            if reliable then return reliable end
+            return remote
+        end
     end
     return nil
 end
 
 local function GetAttackRemote()
-    for _, pattern in ipairs(Config.RemotePatterns.Attack) do
-        local remote = ReplicatedStorage:FindFirstChild(pattern)
-        if remote then return remote end
+    for _, name in pairs({"RemoteEvent", "AttackRemote", "CombatRemote", "Remote"}) do
+        local remote = ReplicatedStorage:FindFirstChild(name)
+        if remote and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
+            return remote
+        end
     end
-    return ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+    return nil
 end
 
 local function SafeFire(remote, ...)
     if remote and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
         if stealthMode then 
-            local start = tick()
-            while tick() - start < 0.1 do 
-                RunService.Heartbeat:Wait() 
-            end
+            wait(0.1)
         end
         pcall(function()
             remote:FireServer(...)
@@ -109,20 +94,16 @@ local function SafeWait()
         wait() 
         return 
     end
-    math.randomseed(tick())
     local delay = math.random(20, 50) / 100
-    local start = tick()
-    while tick() - start < delay do 
-        RunService.Heartbeat:Wait() 
-    end
+    wait(delay)
 end
 
 local function SafeCall(func, ...)
     local success, result = pcall(func, ...)
-    if not success then 
-        warn("SafeCall Error:", result) 
+    if not success then
+        warn("SafeCall Error:", result)
     end
-    return success and result or nil
+    return success
 end
 
 local function SafeConnect(signal, callback)
@@ -142,14 +123,14 @@ local function StartLoop(name, func, interval)
     activeLoops[name] = true
     spawn(function()
         while activeLoops[name] do
-            local success, err = pcall(func)
+            local success = SafeCall(func)
             if not success then
-                warn("Loop ["..name.."] Error:", err)
+                warn("Loop ["..name.."] encountered an error")
             end
             if interval then 
                 wait(interval) 
             else 
-                RunService.Heartbeat:Wait() 
+                wait(0.1)
             end
         end
     end)
@@ -161,129 +142,69 @@ local function StopLoop(name)
     end
 end
 
-local function SaveAndStopFarmLoops()
-    wasAutoAttackEnabled = activeLoops["AutoAttack"] or false
-    wasFarmSelectedEnabled = activeLoops["FarmSelected"] or false
-    wasFarmRandomEnabled = activeLoops["FarmRandom"] or false
-    wasAutoCollectEnabled = activeLoops["AutoCollect"] or false
-    
-    StopLoop("AutoAttack")
-    StopLoop("FarmSelected")
-    StopLoop("FarmRandom")
-    StopLoop("AutoCollect")
-end
-
-local function RestoreFarmLoops()
-    if wasAutoAttackEnabled then 
-        StartLoop("AutoAttack", AutoAttackLogic, Config.FarmInterval) 
-    end
-    if wasFarmSelectedEnabled then 
-        StartLoop("FarmSelected", FarmSelectedLogic, Config.FarmInterval) 
-    end
-    if wasFarmRandomEnabled then 
-        StartLoop("FarmRandom", FarmRandomLogic, Config.FarmInterval) 
-    end
-    if wasAutoCollectEnabled then 
-        StartLoop("AutoCollect", AutoCollectLogic, 1.0) 
-    end
-    
-    print("✅ Đã khôi phục cài đặt Farm map cũ.")
-end
-
 -- ===================================================================
--- IV. GAME LOGIC IMPLEMENTATION
+-- IV. GAME LOGIC IMPLEMENTATION (FIXED)
 -- ===================================================================
 
 local function ValidatePlayerState()
     local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("Humanoid") or character.Humanoid.Health <= 0 then
-        return false
-    end
-    return true
+    if not character then return false end
+    local humanoid = character:FindFirstChild("Humanoid")
+    return humanoid and humanoid.Health > 0
 end
 
 local function EnableAntiAFK()
     local VirtualUser = game:GetService("VirtualUser")
-    if not VirtualUser then return end
-
-    local antiAFKConnection
-    if antiAFKConnection then antiAFKConnection:Disconnect() end
-    antiAFKConnection = LocalPlayer.Idled:Connect(function()
+    LocalPlayer.Idled:Connect(function()
         SafeCall(function()
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new())
         end)
     end)
-    table.insert(safeConnections, antiAFKConnection)
 end
 
 local function FindEnemiesInRange(range)
-    local currentTime = tick()
+    local enemies = {}
     local character = LocalPlayer.Character
-    if not character then return {} end
+    if not character then return enemies end
     
     local root = character:FindFirstChild("HumanoidRootPart")
-    if not root then return {} end
+    if not root then return enemies end
     
     local playerPos = root.Position
 
-    if currentTime - lastEnemyRefresh < Config.EnemyRefreshRate then
-        local livingEnemies = {}
-        for i, enemyData in ipairs(cachedEnemies) do
-            local enemyModel = enemyData.Model
-            if enemyModel and enemyModel.Parent and enemyModel:FindFirstChild("Humanoid") and enemyModel.Humanoid.Health > 0 and enemyModel:FindFirstChild("Head") then
-                enemyData.Position = enemyModel.Head.Position
-                enemyData.Distance = (playerPos - enemyData.Position).Magnitude
-                if enemyData.Distance <= (range or Config.AttackRange) then
-                    table.insert(livingEnemies, enemyData)
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj.Humanoid.Health > 0 then
+            local head = obj:FindFirstChild("Head")
+            if head then
+                local isPlayer = false
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player.Character == obj then 
+                        isPlayer = true
+                        break 
+                    end
                 end
-            end
-        end
-        table.sort(livingEnemies, function(a, b) return a.Distance < b.Distance end)
-        return livingEnemies
-    end
-
-    lastEnemyRefresh = currentTime
-    local enemies = {}
-
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("Head") then
-            local isPlayer = false
-            for _, player in pairs(Players:GetPlayers()) do
-                if player.Character == obj then 
-                    isPlayer = true
-                    break 
-                end
-            end
-            if not isPlayer and obj.Humanoid.Health > 0 then
-                local headPos = obj.Head.Position
-                local distance = (playerPos - headPos).Magnitude
-                if distance <= (range or Config.AttackRange) then
-                    table.insert(enemies, {
-                        Model = obj,
-                        Name = obj.Name,
-                        Position = headPos,
-                        Distance = distance,
-                        Health = obj.Humanoid.Health,
-                        MaxHealth = obj.Humanoid.MaxHealth
-                    })
+                if not isPlayer then
+                    local distance = (playerPos - head.Position).Magnitude
+                    if distance <= (range or Config.AttackRange) then
+                        table.insert(enemies, {
+                            Model = obj,
+                            Name = obj.Name,
+                            Position = head.Position,
+                            Distance = distance
+                        })
+                    end
                 end
             end
         end
     end
     
     table.sort(enemies, function(a, b) return a.Distance < b.Distance end)
-    cachedEnemies = enemies
     return enemies
 end
 
-local function RefreshEnemiesList()
-    lastEnemyRefresh = 0 
-    return FindEnemiesInRange(500)
-end
-
 local function FarmSelectedLogic()
-    if isDungeonActive or not ValidatePlayerState() then return end
+    if not ValidatePlayerState() then return end
     if #selectedEnemyNames == 0 then return end
     
     local character = LocalPlayer.Character
@@ -321,16 +242,16 @@ local function FarmSelectedLogic()
             root.CFrame = CFrame.new(target.Position + offset)
             
             SafeFire(remote, "Attack", target.Model)
-            wait(0.05) 
+            wait(0.05)
             SafeFire(remote, "Attack", target.Model)
             
-            wait(0.05) 
+            wait(0.05)
         end
     end
 end
 
 local function AutoAttackLogic()
-    if isDungeonActive or not ValidatePlayerState() then return end
+    if not ValidatePlayerState() then return end
     local enemies = FindEnemiesInRange(Config.AttackRange)
     if #enemies > 0 then
         local nearestEnemy = enemies[1]
@@ -342,7 +263,7 @@ local function AutoAttackLogic()
 end
 
 local function FarmRandomLogic()
-    if isDungeonActive or not ValidatePlayerState() then return end
+    if not ValidatePlayerState() then return end
     local enemies = FindEnemiesInRange(Config.AttackRange)
     if #enemies > 0 then
         local randomEnemy = enemies[math.random(1, #enemies)]
@@ -358,7 +279,7 @@ local function FarmRandomLogic()
 end
 
 local function AutoCollectLogic()
-    if isDungeonActive or not ValidatePlayerState() then return end
+    if not ValidatePlayerState() then return end
     local character = LocalPlayer.Character
     local remote = GetAttackRemote()
     if not remote then return end
@@ -386,7 +307,6 @@ local function AutoRebirthLogic()
     local remote = GetReplyRemote()
     if remote then
         SafeFire(remote, "RankUp")
-        print("⚡ Đã kích hoạt Auto Rebirth/RankUp!")
     end
 end
 
@@ -421,76 +341,19 @@ local function TeleportToZone(zoneKey)
     local remote = GetReplyRemote()
     if remote then
         SafeFire(remote, "Zone Teleport", {[1] = zoneName}) 
-        selectedZone = zoneKey 
-        lastZone = zoneKey
-        print("🚀 Đã teleport đến Zone: " .. zoneKey .. " (" .. zoneName .. ")")
+        selectedZone = zoneKey
+        print("🚀 Teleport to: " .. zoneKey)
     end
 end
 
 local function SafeTeleportToZone(zoneKey)
     if tick() - lastTeleportTime < Config.TeleportCooldown then
-        print("⏳ Đang chờ cooldown teleport...")
         return
     end
     
     TeleportToZone(zoneKey)
     lastTeleportTime = tick()
 end
-
-local function AutoJoinDungeonEasyLogic()
-    if not ValidatePlayerState() then return end
-    lastZone = selectedZone
-    local remote = GetReplyRemote()
-    if remote then
-        SafeFire(remote, "Join Gamemode", {[1] = Config.Zones["Dungeon Easy"]}) 
-        print("🗺️ Đã gửi yêu cầu tham gia Dungeon Easy!")
-    end
-end
-
-local function AutoFarmDungeonLogic()
-    if not ValidatePlayerState() then 
-        isPlayerInDungeon = false
-        return
-    end
-    local character = LocalPlayer.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    
-    if not root then
-        isPlayerInDungeon = false
-        return
-    end
-    
-    local enemies = FindEnemiesInRange(200)
-    if #enemies > 0 then
-        isPlayerInDungeon = true
-        local nearestEnemy = enemies[1]
-        root.CFrame = CFrame.new(nearestEnemy.Position + Vector3.new(0,5,0))
-        
-        local remote = GetAttackRemote()
-        if remote then
-            SafeFire(remote, "Attack", nearestEnemy.Model)
-        end
-    else
-        isPlayerInDungeon = false
-    end
-end
-
-local function DungeonExitCheck()
-    if isDungeonActive and not isPlayerInDungeon and not activeLoops["AutoJoinDungeon"] and not activeLoops["AutoFarmDungeon"] then
-        isDungeonActive = false
-        autoDungeonFarmEnabled = false
-        
-        print("🚪 Đã thoát Dungeon. Quay về Zone cũ: " .. lastZone)
-        TeleportToZone(lastZone)
-        RestoreFarmLoops()
-        
-        StopLoop("DungeonExitLoop")
-        wait(2) 
-        StartLoop("DungeonExitLoop", DungeonExitCheck, 5) 
-    end
-end
-
-StartLoop("DungeonExitLoop", DungeonExitCheck, 5)
 
 local function StartAutoRollLoop(gachaName)
     local loopName = "AutoRoll"..gachaName
@@ -529,14 +392,14 @@ local function GetEnemyGroups()
 end
 
 -- ===================================================================
--- V. GUI FRAMEWORK
+-- V. GUI FRAMEWORK (FIXED)
 -- ===================================================================
 
-local COLOR_PRIMARY = Color3.fromRGB(30, 30, 30)
-local COLOR_SECONDARY = Color3.fromRGB(45, 45, 45)
-local COLOR_ACCENT = Color3.fromRGB(220, 255, 40)
+local COLOR_PRIMARY = Color3.fromRGB(80, 0, 160)
+local COLOR_SECONDARY = Color3.fromRGB(120, 0, 200)
+local COLOR_ACCENT = Color3.fromRGB(200, 100, 255)
 local COLOR_TEXT = Color3.fromRGB(255, 255, 255)
-local COLOR_TEXT_DIM = Color3.fromRGB(180, 180, 180)
+local COLOR_TEXT_DIM = Color3.fromRGB(200, 200, 255)
 local COLOR_ON = Color3.fromRGB(0, 200, 0)
 local COLOR_OFF = Color3.fromRGB(200, 0, 0)
 
@@ -548,7 +411,7 @@ local function CreatePanel(size, position, parent)
     panel.Parent = parent
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
+    corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = panel
     
     return panel
@@ -572,7 +435,7 @@ function CreateToggleSwitch(text, description, default, callback, parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 0, 50)
     frame.BackgroundTransparency = 1
-    frame.Parent = parent 
+    frame.Parent = parent
 
     local label = CreateLabel(text, UDim2.new(0.6, 0, 0.5, 0), UDim2.new(0, 10, 0, 0), frame, true, 13)
     local desc = CreateLabel(description, UDim2.new(0.8, 0, 0.5, 0), UDim2.new(0, 10, 0.5, 0), frame, false, 11, COLOR_TEXT_DIM)
@@ -581,10 +444,10 @@ function CreateToggleSwitch(text, description, default, callback, parent)
     toggleButton.Size = UDim2.new(0, 65, 0, 28)
     toggleButton.Position = UDim2.new(1, -75, 0.5, -14)
     toggleButton.Text = default and "ON" or "OFF"
-    toggleButton.TextColor3 = COLOR_PRIMARY
+    toggleButton.TextColor3 = COLOR_TEXT
     toggleButton.Font = Enum.Font.GothamBold
     toggleButton.TextSize = 13
-    toggleButton.BackgroundColor3 = default and COLOR_ACCENT or COLOR_SECONDARY
+    toggleButton.BackgroundColor3 = default and COLOR_ON or COLOR_OFF
     toggleButton.Parent = frame
 
     local corner = Instance.new("UICorner")
@@ -596,20 +459,8 @@ function CreateToggleSwitch(text, description, default, callback, parent)
     toggleButton.MouseButton1Click:Connect(function()
         isOn = not isOn
         toggleButton.Text = isOn and "ON" or "OFF"
-        toggleButton.BackgroundColor3 = isOn and COLOR_ACCENT or COLOR_SECONDARY
-        toggleButton.TextColor3 = isOn and COLOR_PRIMARY or COLOR_ACCENT
+        toggleButton.BackgroundColor3 = isOn and COLOR_ON or COLOR_OFF
         callback(isOn)
-        
-        if text:find("Stealth Mode") and TitleBar then
-            stealthMode = isOn
-            local indicator = TitleBar:FindFirstChild("StealthIndicator")
-            local label = TitleBar:FindFirstChild("StealthLabel")
-            if indicator and label then
-                indicator.BackgroundColor3 = isOn and COLOR_ON or COLOR_OFF
-                label.Text = isOn and "STEALTH: ON" or "STEALTH: OFF"
-                label.TextColor3 = isOn and COLOR_ON or COLOR_OFF
-            end
-        end
     end)
 
     return frame
@@ -619,14 +470,14 @@ function CreateActionButton(text, description, callback, parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 0, 50)
     frame.BackgroundTransparency = 1
-    frame.Parent = parent 
+    frame.Parent = parent
     
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0.4, 0, 0, 32)
     btn.Position = UDim2.new(0, 10, 0.5, -16)
     btn.BackgroundColor3 = COLOR_ACCENT
     btn.Text = text
-    btn.TextColor3 = COLOR_PRIMARY
+    btn.TextColor3 = COLOR_TEXT
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 13
     btn.Parent = frame
@@ -639,9 +490,7 @@ function CreateActionButton(text, description, callback, parent)
     desc.TextXAlignment = Enum.TextXAlignment.Left
 
     btn.MouseButton1Click:Connect(function()
-        if callback then 
-            callback() 
-        end
+        if callback then callback() end
     end)
 
     return frame
@@ -651,7 +500,7 @@ function CreateComboBox(text, description, items, callback, parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 0, 60)
     frame.BackgroundTransparency = 1
-    frame.Parent = parent 
+    frame.Parent = parent
     
     local label = CreateLabel(text, UDim2.new(0.5, 0, 0.5, 0), UDim2.new(0, 10, 0, 5), frame, true, 14)
     local desc = CreateLabel(description, UDim2.new(0.5, 0, 0.5, 0), UDim2.new(0, 10, 0.5, 0), frame, false, 11, COLOR_TEXT_DIM)
@@ -661,7 +510,7 @@ function CreateComboBox(text, description, items, callback, parent)
     dropdown.Position = UDim2.new(0.55, 0, 0.25, 0)
     dropdown.BackgroundColor3 = COLOR_SECONDARY
     dropdown.Text = items[1] or "Select"
-    dropdown.TextColor3 = COLOR_ACCENT
+    dropdown.TextColor3 = COLOR_TEXT
     dropdown.Font = Enum.Font.GothamBold
     dropdown.TextSize = 13
     dropdown.Parent = frame
@@ -671,30 +520,13 @@ function CreateComboBox(text, description, items, callback, parent)
     btnCorner.Parent = dropdown
 
     local selected = items[1]
-    local menuOpen = false
-    local menu = nil
     
-    SafeConnect(dropdown.MouseButton1Click, function()
-        if menuOpen and menu then 
-            menu:Destroy() 
-            menu = nil 
-            menuOpen = false 
-            return 
-        end
-
-        menu = Instance.new("ScrollingFrame")
-        menu.Size = UDim2.new(0.4, 0, 0, math.min(#items * 28, 200)) 
+    dropdown.MouseButton1Click:Connect(function()
+        local menu = Instance.new("Frame")
+        menu.Size = UDim2.new(0.4, 0, 0, math.min(#items * 28, 200))
         menu.Position = UDim2.new(0.55, 0, 0.75, 0)
         menu.BackgroundColor3 = COLOR_SECONDARY
         menu.Parent = frame
-        menu.ZIndex = 5 
-        menu.ScrollBarThickness = 5
-        menu.ScrollBarImageColor3 = COLOR_ACCENT
-        menu.CanvasSize = UDim2.new(0, 0, 0, #items * 28)
-
-        local listLayout = Instance.new("UIListLayout")
-        listLayout.Padding = UDim.new(0, 2)
-        listLayout.Parent = menu
 
         local menuCorner = Instance.new("UICorner")
         menuCorner.CornerRadius = UDim.new(0, 6)
@@ -703,9 +535,10 @@ function CreateComboBox(text, description, items, callback, parent)
         for i, item in ipairs(items) do
             local itemBtn = Instance.new("TextButton")
             itemBtn.Size = UDim2.new(1, 0, 0, 28)
+            itemBtn.Position = UDim2.new(0, 0, 0, (i-1)*28)
             itemBtn.BackgroundColor3 = (item == selected) and COLOR_PRIMARY or COLOR_SECONDARY
             itemBtn.Text = item
-            itemBtn.TextColor3 = (item == selected) and COLOR_ACCENT or COLOR_TEXT
+            itemBtn.TextColor3 = COLOR_TEXT
             itemBtn.Font = Enum.Font.Gotham
             itemBtn.TextSize = 12
             itemBtn.Parent = menu
@@ -714,28 +547,23 @@ function CreateComboBox(text, description, items, callback, parent)
                 dropdown.Text = item
                 selected = item
                 menu:Destroy()
-                menu = nil
-                menuOpen = false
-                if callback then 
-                    callback(item) 
-                end
+                if callback then callback(item) end
             end)
         end
-        menuOpen = true
     end)
 
     return frame
 end
 
 -- ===================================================================
--- VI. GUI CONSTRUCTION
+-- VI. GUI CONSTRUCTION (FIXED)
 -- ===================================================================
 
 -- Mini UI Setup
 HimonoMini = Instance.new("ScreenGui")
 HimonoMini.Name = "HimonoHubMini"
 HimonoMini.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-HimonoMini.Enabled = false 
+HimonoMini.Enabled = false
 HimonoMini.Parent = game.CoreGui
 
 local function ToggleUI(showMain)
@@ -751,10 +579,10 @@ end
 MiniButton = Instance.new("TextButton")
 MiniButton.Name = "MiniButton"
 MiniButton.Size = UDim2.new(0, 40, 0, 40)
-MiniButton.Position = UDim2.new(1, -50, 0, 50) 
+MiniButton.Position = UDim2.new(1, -50, 0, 50)
 MiniButton.BackgroundColor3 = COLOR_ACCENT
-MiniButton.Text = "👑"
-MiniButton.TextColor3 = COLOR_PRIMARY
+MiniButton.Text = "🟣"
+MiniButton.TextColor3 = COLOR_TEXT
 MiniButton.Font = Enum.Font.GothamBold
 MiniButton.TextSize = 24
 MiniButton.Parent = HimonoMini
@@ -775,7 +603,6 @@ HimonoHub.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 HimonoHub.Parent = game.CoreGui
 
 MainContainer = CreatePanel(UDim2.new(0, 500, 0, 480), UDim2.new(0.5, -250, 0.5, -240), HimonoHub)
-MainContainer.BackgroundColor3 = COLOR_PRIMARY
 
 -- TitleBar Setup
 TitleBar = Instance.new("Frame")
@@ -784,7 +611,7 @@ TitleBar.Size = UDim2.new(1, 0, 0, 40)
 TitleBar.BackgroundColor3 = COLOR_PRIMARY
 TitleBar.Parent = MainContainer
 
-local Title = CreateLabel("👑 Himono Hub v4.7 - FINAL STABILITY", UDim2.new(1, -100, 1, 0), UDim2.new(0, 15, 0, 0), TitleBar, true, 16, COLOR_ACCENT)
+local Title = CreateLabel("🟣 HIMONO HUB v4.7 - PURPLE EDITION", UDim2.new(1, -100, 1, 0), UDim2.new(0, 15, 0, 0), TitleBar, true, 16, COLOR_ACCENT)
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
 local StealthIndicator = Instance.new("Frame")
@@ -808,7 +635,7 @@ HideButton.Name = "HideButton"
 HideButton.Size = UDim2.new(0, 30, 0, 30)
 HideButton.Position = UDim2.new(1, -35, 0.5, -15)
 HideButton.BackgroundColor3 = COLOR_SECONDARY
-HideButton.Text = "➖" 
+HideButton.Text = "➖"
 HideButton.TextColor3 = COLOR_TEXT
 HideButton.Font = Enum.Font.GothamBold
 HideButton.TextSize = 18
@@ -824,7 +651,6 @@ end)
 
 -- Tab System
 local TabContainer = CreatePanel(UDim2.new(0, 150, 1, -50), UDim2.new(0, 10, 0, 45), MainContainer)
-TabContainer.BackgroundColor3 = COLOR_PRIMARY
 
 local TabListLayout = Instance.new("UIListLayout")
 TabListLayout.FillDirection = Enum.FillDirection.Vertical
@@ -851,8 +677,8 @@ ContentLayout.Parent = ContentScroll
 
 -- Tabs definition
 local tabs = {
-    "🏠 MAIN", "🌾 FARM", "🗺️ DUNGEON", "🎰 GACHA", 
-    "⚡ STATS", "🚀 TELEPORT", "🥚 EGG", "⚙️ SETTINGS", "🎯 ENEMIES"
+    "🏠 MAIN", "🌾 FARM", "🎰 GACHA", 
+    "⚡ STATS", "🚀 TELEPORT", "🥚 EGG", "⚙️ SETTINGS"
 }
 local tabFrames, tabButtons = {}, {}
 
@@ -861,7 +687,7 @@ for i, tabName in ipairs(tabs) do
     tabButton.Size = UDim2.new(1, -10, 0, 35)
     tabButton.BackgroundColor3 = i == 1 and COLOR_ACCENT or COLOR_PRIMARY
     tabButton.Text = tabName
-    tabButton.TextColor3 = i == 1 and COLOR_PRIMARY or COLOR_TEXT
+    tabButton.TextColor3 = i == 1 and COLOR_TEXT or COLOR_TEXT
     tabButton.Font = Enum.Font.GothamBold
     tabButton.TextSize = 13
     tabButton.Parent = TabContainer
@@ -890,7 +716,6 @@ for i, tabName in ipairs(tabs) do
         end
         for name, btn in pairs(tabButtons) do
             btn.BackgroundColor3 = (name == tabName) and COLOR_ACCENT or COLOR_PRIMARY
-            btn.TextColor3 = (name == tabName) and COLOR_PRIMARY or COLOR_TEXT
         end
     end)
 end
@@ -900,7 +725,7 @@ local mainContent = tabFrames["🏠 MAIN"]
 CreateLabel("CORE AUTOMATION:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), mainContent, true, 16, COLOR_ACCENT)
 
 CreateToggleSwitch(
-    "Auto Attack (Nearest)", "Tự động tấn công kẻ địch gần nhất (Speed: " .. Config.FarmInterval .. "s)", false, 
+    "Auto Attack (Nearest)", "Tự động tấn công kẻ địch gần nhất", false, 
     function(enabled)
         if enabled then 
             StartLoop("AutoAttack", AutoAttackLogic, Config.FarmInterval) 
@@ -911,7 +736,7 @@ CreateToggleSwitch(
 )
 
 CreateToggleSwitch(
-    "Auto Collect All Drops", "Tự động nhặt vật phẩm quanh bạn (Range: " .. Config.CollectRange .. ")", false, 
+    "Auto Collect All Drops", "Tự động nhặt vật phẩm quanh bạn", false, 
     function(enabled)
         if enabled then 
             StartLoop("AutoCollect", AutoCollectLogic, 1.0) 
@@ -921,23 +746,12 @@ CreateToggleSwitch(
     end, mainContent
 )
 
-CreateToggleSwitch(
-    "Auto Rebirth / RankUp", "Tự động RankUp/Rebirth khi có thể (Check: " .. Config.RebirthCheckInterval .. "s)", false, 
-    function(enabled)
-        if enabled then 
-            StartLoop("AutoRebirth", AutoRebirthLogic, Config.RebirthCheckInterval)
-        else 
-            StopLoop("AutoRebirth") 
-        end
-    end, mainContent
-)
-
 -- FARM TAB CONTENT
 local farmContent = tabFrames["🌾 FARM"]
-CreateLabel("FARMING METHODS (Speed: " .. Config.FarmInterval .. "s):", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), farmContent, true, 16, COLOR_ACCENT)
+CreateLabel("FARMING METHODS:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), farmContent, true, 16, COLOR_ACCENT)
 
 CreateToggleSwitch(
-    "Auto Farm Selected Enemies", "Farm TẤT CẢ enemy cùng tên (Burst Attack)", false, 
+    "Auto Farm Selected Enemies", "Farm TẤT CẢ enemy cùng tên", false, 
     function(enabled)
         if enabled then 
             StartLoop("FarmSelected", FarmSelectedLogic, Config.FarmInterval) 
@@ -958,59 +772,72 @@ CreateToggleSwitch(
     end, farmContent
 )
 
--- DUNGEON TAB CONTENT
-local dungeonContent = tabFrames["🗺️ DUNGEON"]
-CreateLabel("DUNGEON AUTOMATION:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), dungeonContent, true, 16, COLOR_ACCENT)
+-- Enemy Selection in FARM tab
+CreateLabel("ENEMY SELECTION:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), farmContent, true, 16, COLOR_ACCENT)
 
-CreateToggleSwitch(
-    "Auto Join Dungeon Easy", "Tự động gửi yêu cầu vào Dungeon Easy (Check: " .. Config.DungeonJoinInterval .. "s)", false, 
-    function(enabled)
-        if enabled then 
-            isDungeonActive = true
-            SaveAndStopFarmLoops()
-            StartLoop("AutoJoinDungeon", AutoJoinDungeonEasyLogic, Config.DungeonJoinInterval)
-        else 
-            StopLoop("AutoJoinDungeon")
-            isDungeonActive = activeLoops["AutoFarmDungeon"] or false
-            if not isDungeonActive then 
-                RestoreFarmLoops() 
+CreateActionButton("Clear Selected (" .. #selectedEnemyNames .. "x)", "Xóa danh sách enemy được chọn", function()
+    selectedEnemyNames = {}
+end, farmContent)
+
+local refreshEnemiesBtn = CreateActionButton("Refresh/Scan Enemies", "Quét lại kẻ địch trong phạm vi", function()
+    for _, child in pairs(farmContent:GetChildren()) do
+        if child.Name == "EnemyGroupToggle" then 
+            child:Destroy() 
+        end
+    end
+    
+    local enemyGroups = GetEnemyGroups()
+    local sortedEnemyNames = {}
+    for name, _ in pairs(enemyGroups) do 
+        table.insert(sortedEnemyNames, name) 
+    end
+    table.sort(sortedEnemyNames)
+
+    for _, name in ipairs(sortedEnemyNames) do
+        local group = enemyGroups[name]
+        local isSelected = false
+        for _, selectedName in ipairs(selectedEnemyNames) do
+            if selectedName == name then 
+                isSelected = true
+                break 
             end
         end
-    end, dungeonContent
-)
 
-CreateToggleSwitch(
-    "Auto Farm Dungeon (Max Speed)", "Tự động Teleport và farm quái trong Dungeon (Speed: " .. Config.FarmInterval .. "s)", false, 
-    function(enabled)
-        autoDungeonFarmEnabled = enabled
-        if enabled then 
-            isDungeonActive = true
-            SaveAndStopFarmLoops()
-            StartLoop("AutoFarmDungeon", AutoFarmDungeonLogic, Config.FarmInterval)
-        else 
-            StopLoop("AutoFarmDungeon")
-            isDungeonActive = activeLoops["AutoJoinDungeon"] or false
-            if not isDungeonActive then 
-                RestoreFarmLoops() 
-            end
-        end
-    end, dungeonContent
-)
-
-CreateActionButton("Force Leave Dungeon", "Thoát Dungeon và quay về Zone cũ", function()
-    isDungeonActive = true
-    isPlayerInDungeon = false
-    StopLoop("AutoJoinDungeon")
-    StopLoop("AutoFarmDungeon")
-    StopLoop("DungeonExitLoop")
-    DungeonExitCheck()
-end, dungeonContent)
+        local toggle = CreateToggleSwitch(
+            name .. " (" .. group.count .. "x)", 
+            "Gần nhất: " .. math.floor(group.nearestDistance) .. "m", 
+            isSelected, 
+            function(enabled)
+                if enabled then
+                    local found = false
+                    for _, n in ipairs(selectedEnemyNames) do
+                        if n == name then 
+                            found = true
+                            break 
+                        end
+                    end
+                    if not found then 
+                        table.insert(selectedEnemyNames, name) 
+                    end
+                else
+                    for i, n in ipairs(selectedEnemyNames) do
+                        if n == name then 
+                            table.remove(selectedEnemyNames, i)
+                            break 
+                        end
+                    end
+                end
+            end, farmContent
+        )
+        toggle.Name = "EnemyGroupToggle"
+    end
+end, farmContent)
 
 -- GACHA TAB CONTENT
 local gachaContent = tabFrames["🎰 GACHA"]
 CreateLabel("GACHA AUTOMATION:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), gachaContent, true, 16, COLOR_ACCENT)
 
-local gachaCombo = CreateComboBox("Select Gacha", "Chọn loại gacha để auto roll", Config.GachaTypes, function(selected)
+CreateComboBox("Select Gacha", "Chọn loại gacha để auto roll", Config.GachaTypes, function(selected)
     selectedGachaType = selected
 end, gachaContent)
 
@@ -1021,7 +848,7 @@ end, gachaContent)
 for i, gacha in ipairs(Config.GachaTypes) do
     CreateToggleSwitch(
         "Auto Roll: " .. gacha, 
-        "Tự động roll " .. gacha .. " (Loop 2s).", 
+        "Tự động roll " .. gacha, 
         false, 
         function(enabled)
             if enabled then
@@ -1037,7 +864,7 @@ end
 local statsContent = tabFrames["⚡ STATS"]
 CreateLabel("STAT POINT DISTRIBUTION:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), statsContent, true, 16, COLOR_ACCENT)
 
-local statCombo = CreateComboBox("Select Stat", "Chọn loại stat để cộng điểm", Config.StatTypes, function(selected)
+CreateComboBox("Select Stat", "Chọn loại stat để cộng điểm", Config.StatTypes, function(selected)
     selectedStat = selected
 end, statsContent)
 
@@ -1049,9 +876,7 @@ end, statsContent)
 local teleportContent = tabFrames["🚀 TELEPORT"]
 CreateLabel("ZONE TELEPORT:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), teleportContent, true, 16, COLOR_ACCENT)
 
-CreateLabel("Cooldown: " .. Config.TeleportCooldown .. "s", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 30), teleportContent, false, 12, COLOR_TEXT_DIM)
-
-local zoneCombo = CreateComboBox("Select Destination", "Di chuyển nhanh đến khu vực", sortedZoneKeys, function(selected)
+CreateComboBox("Select Destination", "Di chuyển nhanh đến khu vực", sortedZoneKeys, function(selected)
     selectedZone = selected
 end, teleportContent)
 
@@ -1069,7 +894,7 @@ end, eggContent)
 
 CreateToggleSwitch(
     "Enable Auto Open Egg", 
-    "Tự động mở egg khi gần (Loop 2s)", 
+    "Tự động mở egg khi gần", 
     false, 
     function(enabled)
         if enabled then
@@ -1097,99 +922,29 @@ CreateToggleSwitch(
 
 CreateToggleSwitch(
     "Enable Stealth Mode", 
-    "Giảm tốc độ Remote Calls để tránh bị phát hiện", 
+    "Giảm tốc độ Remote Calls", 
     Config.StealthMode, 
     function(enabled)
         stealthMode = enabled
-        local indicator = TitleBar:FindFirstChild("StealthIndicator")
-        local label = TitleBar:FindFirstChild("StealthLabel")
-        if indicator and label then
-            indicator.BackgroundColor3 = enabled and COLOR_ON or COLOR_OFF
-            label.Text = enabled and "STEALTH: ON" or "STEALTH: OFF"
-            label.TextColor3 = enabled and COLOR_ON or COLOR_OFF
-        end
+        StealthIndicator.BackgroundColor3 = enabled and COLOR_ON or COLOR_OFF
+        StealthLabel.Text = enabled and "STEALTH: ON" or "STEALTH: OFF"
+        StealthLabel.TextColor3 = enabled and COLOR_ON or COLOR_OFF
     end, settingsContent
 )
-
--- ENEMIES TAB CONTENT
-local enemiesContent = tabFrames["🎯 ENEMIES"]
-CreateLabel("ENEMY SELECTOR:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), enemiesContent, true, 16, COLOR_ACCENT)
-
-local clearSelectionBtn = CreateActionButton("Clear Selected Positions (" .. #selectedEnemyNames .. "x)", "Xóa tất cả vị trí kẻ địch đã chọn", function()
-    selectedEnemyNames = {}
-    print("🗑️ Đã xóa danh sách kẻ địch được chọn.")
-end, enemiesContent)
-
-local refreshEnemiesBtn = CreateActionButton("Refresh/Scan Enemies", "Quét lại kẻ địch trong phạm vi 500 stud", function()
-    for _, child in pairs(enemiesContent:GetChildren()) do
-        if child.Name ~= "UILabel" and child ~= refreshEnemiesBtn and child ~= clearSelectionBtn then 
-            child:Destroy() 
-        end
-    end
-    
-    local enemyGroups = GetEnemyGroups()
-    local sortedEnemyNames = {}
-    for name, _ in pairs(enemyGroups) do 
-        table.insert(sortedEnemyNames, name) 
-    end
-    table.sort(sortedEnemyNames)
-
-    CreateLabel("---", UDim2.new(1, 0, 0, 10), UDim2.new(0, 10, 0, 0), enemiesContent, false, 14, COLOR_TEXT_DIM)
-    
-    for _, name in ipairs(sortedEnemyNames) do
-        local group = enemyGroups[name]
-        local isSelected = false
-        for _, selectedName in ipairs(selectedEnemyNames) do
-            if selectedName == name then 
-                isSelected = true
-                break 
-            end
-        end
-
-        local toggle = CreateToggleSwitch(
-            name .. " (" .. group.count .. "x)", 
-            "Gần nhất: " .. math.floor(group.nearestDistance) .. "m | Chọn để farm nhóm này.", 
-            isSelected, 
-            function(enabled)
-                if enabled then
-                    local found = false
-                    for _, n in ipairs(selectedEnemyNames) do
-                        if n == name then 
-                            found = true
-                            break 
-                        end
-                    end
-                    if not found then 
-                        table.insert(selectedEnemyNames, name) 
-                    end
-                    print("✅ Đã thêm nhóm " .. name .. " (" .. group.count .. "x) vào danh sách farm.")
-                else
-                    for i, n in ipairs(selectedEnemyNames) do
-                        if n == name then 
-                            table.remove(selectedEnemyNames, i)
-                            break 
-                        end
-                    end
-                    print("❌ Đã xóa nhóm " .. name .. " khỏi danh sách farm.")
-                end
-            end, enemiesContent
-        )
-    end
-end, enemiesContent)
 
 -- ===================================================================
 -- VII. DRAG & HOTKEY FUNCTIONALITY
 -- ===================================================================
 
 -- Drag functionality for main UI
-local dragMain = false
-local dragStartMain, startPosMain
+local dragging = false
+local dragInput, dragStart, startPos
 
 TitleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragMain = true
-        dragStartMain = input.Position
-        startPosMain = MainContainer.Position
+        dragging = true
+        dragStart = input.Position
+        startPos = MainContainer.Position
     end
 end)
 
@@ -1200,33 +955,32 @@ TitleBar.InputChanged:Connect(function(input)
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragMain then
-        local delta = input.Position - dragStartMain
-        MainContainer.Position = UDim2.new(startPosMain.X.Scale, startPosMain.X.Offset + delta.X, startPosMain.Y.Scale, startPosMain.Y.Offset + delta.Y)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainContainer.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
 
 TitleBar.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragMain = false
+        dragging = false
     end
 end)
 
 -- Drag functionality for mini UI
-local dragMini = false
+local draggingMini = false
 local dragStartMini, startPosMini
 
 MiniButton.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragMini = true
+        draggingMini = true
         dragStartMini = input.Position
         startPosMini = MiniButton.Position
-        MiniButton.ZIndex = 3
     end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragMini then
+    if input.UserInputType == Enum.UserInputType.MouseMovement and draggingMini then
         local delta = input.Position - dragStartMini
         MiniButton.Position = UDim2.new(startPosMini.X.Scale, startPosMini.X.Offset + delta.X, startPosMini.Y.Scale, startPosMini.Y.Offset + delta.Y)
     end
@@ -1234,8 +988,7 @@ end)
 
 MiniButton.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragMini = false
-        MiniButton.ZIndex = 2
+        draggingMini = false
     end
 end)
 
@@ -1263,8 +1016,7 @@ spawn(function()
                 ContentScroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
             end
         end
-        clearSelectionBtn.Text = "Clear Selected Positions (" .. #selectedEnemyNames .. "x)"
     end
 end)
 
-print("👑 Himono Hub v4.7 - FINAL STABILITY FIXED LOADED! (Press Left Control to toggle)")
+print("🟣 HIMONO HUB v4.7 - PURPLE EDITION LOADED! (Press Left Control to toggle)")
