@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-- local TweenService = game:GetService("TweenService") -- ĐÃ XÓA: Lỗi 2
 local LocalPlayer = Players.LocalPlayer
 
 -- ===================================================================
@@ -43,7 +44,7 @@ for key, _ in pairs(Config.Zones) do table.insert(sortedZoneKeys, key) end
 table.sort(sortedZoneKeys)
 
 -- ===================================================================
--- II. STATE VARIABLES
+-- II. STATE VARIABLES (Đã làm sạch)
 -- ===================================================================
 
 local stealthMode = Config.StealthMode
@@ -66,6 +67,8 @@ local lastEnemyRefresh = 0
 local lastTeleportTime = 0 
 local HimonoHub, HimonoMini 
 local TitleBar 
+local MainContainer -- Biến MainContainer (Đã xóa khai báo trùng)
+local MiniButton -- Biến MiniButton (Đã xóa khai báo trùng)
 
 -- ===================================================================
 -- III. CORE UTILITIES
@@ -280,7 +283,7 @@ local function FarmSelectedLogic()
     end
 end
 
--- SỬA LOGIC: ĐỨNG YÊN TẠI CHỖ
+-- Auto Attack Logic (ĐỨNG YÊN TẠI CHỖ)
 local function AutoAttackLogic()
     if isDungeonActive or not ValidatePlayerState() then return end
     local enemies = FindEnemiesInRange(Config.AttackRange)
@@ -289,7 +292,6 @@ local function AutoAttackLogic()
         
         local remote = GetAttackRemote()
         if remote then 
-            -- CHỈ FIRE REMOTE MÀ KHÔNG TELEPORT HOẶC DI CHUYỂN
             SafeFire(remote, "Attack", nearestEnemy.Model) 
         end
     end
@@ -544,7 +546,7 @@ function CreateToggleSwitch(text, description, default, callback, parent)
     
     local isOn = default
 
-    SafeConnect(toggleButton.MouseButton1Click, function()
+    toggleButton.MouseButton1Click:Connect(function()
         isOn = not isOn
         toggleButton.Text = isOn and "ON" or "OFF"
         toggleButton.BackgroundColor3 = isOn and COLOR_ACCENT or COLOR_SECONDARY
@@ -654,7 +656,7 @@ function CreateComboBox(text, description, items, callback, parent)
             itemBtn.TextSize = 12
             itemBtn.Parent = menu
             
-            SafeConnect(itemBtn.MouseButton1Click, function()
+            itemBtn.MouseButton1Click:Connect(function()
                 dropdown.Text = item
                 selected = item
                 menu:Destroy()
@@ -691,7 +693,8 @@ local function ToggleUI(showMain)
     end
 end
 
-local MiniButton = Instance.new("TextButton")
+MiniButton = Instance.new("TextButton")
+MiniButton.Name = "MiniButton"
 MiniButton.Size = UDim2.new(0, 40, 0, 40)
 MiniButton.Position = UDim2.new(1, -50, 0, 50) 
 MiniButton.BackgroundColor3 = COLOR_ACCENT
@@ -705,7 +708,7 @@ local MiniCorner = Instance.new("UICorner")
 MiniCorner.CornerRadius = UDim.new(1, 0)
 MiniCorner.Parent = MiniButton
 
-SafeConnect(MiniButton.MouseButton1Click, function()
+MiniButton.MouseButton1Click:Connect(function()
     ToggleUI(true)
 end)
 
@@ -716,7 +719,7 @@ HimonoHub.ResetOnSpawn = false
 HimonoHub.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 HimonoHub.Parent = game.CoreGui
 
-local MainContainer = CreatePanel(UDim2.new(0, 500, 0, 480), UDim2.new(0.5, -250, 0.5, -240), HimonoHub)
+MainContainer = CreatePanel(UDim2.new(0, 500, 0, 480), UDim2.new(0.5, -250, 0.5, -240), HimonoHub)
 MainContainer.BackgroundColor3 = COLOR_PRIMARY
 
 -- Khởi tạo TitleBar
@@ -760,7 +763,7 @@ local HideCorner = Instance.new("UICorner")
 HideCorner.CornerRadius = UDim.new(0, 6)
 HideCorner.Parent = HideButton
 
-SafeConnect(HideButton.MouseButton1Click, function()
+HideButton.MouseButton1Click:Connect(function()
     ToggleUI(false)
 end)
 
@@ -825,7 +828,7 @@ for i, tabName in ipairs(tabs) do
     tabFrames[tabName] = contentFrame
     tabButtons[tabName] = tabButton
 
-    SafeConnect(tabButton.MouseButton1Click, function()
+    tabButton.MouseButton1Click:Connect(function()
         for name, frame in pairs(tabFrames) do
             frame.Visible = (name == tabName)
         end
@@ -846,7 +849,6 @@ local autoAttackToggle = CreateToggleSwitch(
         if enabled then StartLoop("AutoAttack", AutoAttackLogic, Config.FarmInterval) else StopLoop("AutoAttack") end
     end, mainContent
 )
-autoAttackToggle.Parent = mainContent
 
 local autoDropsToggle = CreateToggleSwitch(
     "Auto Collect All Drops", "Tự động nhặt vật phẩm quanh bạn (Range: " .. Config.CollectRange .. ")", false, 
@@ -854,7 +856,6 @@ local autoDropsToggle = CreateToggleSwitch(
         if enabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) else StopLoop("AutoCollect") end
     end, mainContent
 )
-autoDropsToggle.Parent = mainContent
 
 local autoRebirthToggle = CreateToggleSwitch(
     "Auto Rebirth / RankUp", "Tự động RankUp/Rebirth khi có thể (Check: " .. Config.RebirthCheckInterval .. "s)", false, 
@@ -863,7 +864,6 @@ local autoRebirthToggle = CreateToggleSwitch(
         else StopLoop("AutoRebirth") end
     end, mainContent
 )
-autoRebirthToggle.Parent = mainContent
 
 local farmContent = tabFrames["🌾 FARM"]
 CreateLabel("FARMING METHODS (Speed: " .. Config.FarmInterval .. "s):", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), farmContent, true, 16, COLOR_ACCENT)
@@ -874,7 +874,6 @@ local autoFarmSelectedToggle = CreateToggleSwitch(
         if enabled then StartLoop("FarmSelected", FarmSelectedLogic, Config.FarmInterval) else StopLoop("FarmSelected") end
     end, farmContent
 )
-autoFarmSelectedToggle.Parent = farmContent
 
 local autoFarmRandomToggle = CreateToggleSwitch(
     "Farm Random Enemies", "Tự động Teleport và farm ngẫu nhiên", false, 
@@ -882,7 +881,6 @@ local autoFarmRandomToggle = CreateToggleSwitch(
         if enabled then StartLoop("FarmRandom", FarmRandomLogic, Config.FarmInterval) else StopLoop("FarmRandom") end
     end, farmContent
 )
-autoFarmRandomToggle.Parent = farmContent
 
 local dungeonContent = tabFrames["🗺️ DUNGEON"]
 CreateLabel("DUNGEON AUTOMATION:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), dungeonContent, true, 16, COLOR_ACCENT)
@@ -901,7 +899,6 @@ local autoJoinDungeonToggle = CreateToggleSwitch(
         end
     end, dungeonContent
 )
-autoJoinDungeonToggle.Parent = dungeonContent
 
 local autoFarmDungeonToggle = CreateToggleSwitch(
     "Auto Farm Dungeon (Max Speed)", "Tự động Teleport và farm quái trong Dungeon (Speed: " .. Config.FarmInterval .. "s)", false, 
@@ -918,7 +915,6 @@ local autoFarmDungeonToggle = CreateToggleSwitch(
         end
     end, dungeonContent
 )
-autoFarmDungeonToggle.Parent = dungeonContent
 
 local leaveDungeonBtn = CreateActionButton("Force Leave Dungeon", "Thoát Dungeon và quay về Zone cũ", function()
     isDungeonActive = true; isPlayerInDungeon = false;
@@ -926,7 +922,6 @@ local leaveDungeonBtn = CreateActionButton("Force Leave Dungeon", "Thoát Dungeo
     StopLoop("DungeonExitLoop")
     DungeonExitCheck()
 end, dungeonContent)
-leaveDungeonBtn.Parent = dungeonContent
 
 local gachaContent = tabFrames["🎰 GACHA"]
 CreateLabel("GACHA AUTOMATION:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), gachaContent, true, 16, COLOR_ACCENT)
@@ -935,12 +930,10 @@ local gachaCombo = CreateComboBox("Select Gacha", "Chọn loại gacha để aut
     selectedGachaType = selected
     rollBtn.Text = "Manual Roll: " .. selected
 end, gachaContent)
-gachaCombo.Parent = gachaContent
 
 local rollBtn = CreateActionButton("Manual Roll: " .. Config.GachaTypes[1], "Roll gacha đã chọn một lần", function()
     StartGacha(selectedGachaType)
 end, gachaContent)
-rollBtn.Parent = gachaContent
 
 for i, gacha in ipairs(Config.GachaTypes) do
     local toggle = CreateToggleSwitch(
@@ -955,7 +948,6 @@ for i, gacha in ipairs(Config.GachaTypes) do
             end
         end, gachaContent
     )
-    toggle.Parent = gachaContent
 end
 
 local statsContent = tabFrames["⚡ STATS"]
@@ -965,12 +957,10 @@ local statCombo = CreateComboBox("Select Stat", "Chọn loại stat để cộng
     selectedStat = selected
     distributeBtn.Text = "Distribute: " .. selected
 end, statsContent)
-statCombo.Parent = statsContent
 
 local distributeBtn = CreateActionButton("Distribute: " .. Config.StatTypes[1], "Cộng 1 điểm vào stat đã chọn", function()
     DistributeStat(selectedStat)
 end, statsContent)
-distributeBtn.Parent = statsContent
 
 local teleportContent = tabFrames["🚀 TELEPORT"]
 CreateLabel("ZONE TELEPORT:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), teleportContent, true, 16, COLOR_ACCENT)
@@ -980,12 +970,10 @@ CreateLabel("Cooldown: " .. Config.TeleportCooldown .. "s", UDim2.new(1, 0, 0, 2
 local zoneCombo = CreateComboBox("Select Destination", "Di chuyển nhanh đến khu vực", sortedZoneKeys, function(selected)
     selectedZone = selected
 end, teleportContent)
-zoneCombo.Parent = teleportContent
 
 local teleportBtn = CreateActionButton("TELEPORT NOW", "Di chuyển đến khu vực đã chọn", function()
     SafeTeleportToZone(selectedZone)
 end, teleportContent)
-teleportBtn.Parent = teleportContent
 
 local eggContent = tabFrames["🥚 EGG"]
 CreateLabel("EGG HATCHING:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), eggContent, true, 16, COLOR_ACCENT)
@@ -993,7 +981,6 @@ CreateLabel("EGG HATCHING:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), egg
 local openEggBtn = CreateActionButton("Manual Open Egg", "Mở egg gần bạn một lần", function()
     AutoOpenEggLogic()
 end, eggContent)
-openEggBtn.Parent = eggContent
 
 local autoOpenEggToggle = CreateToggleSwitch(
     "Enable Auto Open Egg", 
@@ -1007,7 +994,6 @@ local autoOpenEggToggle = CreateToggleSwitch(
         end
     end, eggContent
 )
-autoOpenEggToggle.Parent = eggContent
 
 local settingsContent = tabFrames["⚙️ SETTINGS"]
 CreateLabel("SYSTEM SETTINGS:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), settingsContent, true, 16, COLOR_ACCENT)
@@ -1020,7 +1006,6 @@ local antiAfkToggle = CreateToggleSwitch(
         if enabled then EnableAntiAFK() end
     end, settingsContent
 )
-antiAfkToggle.Parent = settingsContent
 
 local stealthToggle = CreateToggleSwitch(
     "Enable Stealth Mode", 
@@ -1029,7 +1014,6 @@ local stealthToggle = CreateToggleSwitch(
     function(enabled)
     end, settingsContent
 )
-stealthToggle.Parent = settingsContent
 
 local enemiesContent = tabFrames["🎯 ENEMIES"]
 CreateLabel("ENEMY SELECTOR:", UDim2.new(1, 0, 0, 20), UDim2.new(0, 10, 0, 5), enemiesContent, true, 16, COLOR_ACCENT)
@@ -1038,7 +1022,6 @@ local clearSelectionBtn = CreateActionButton("Clear Selected Positions", "Xóa t
     selectedEnemyNames = {}
     print("🗑️ Đã xóa danh sách kẻ địch được chọn.")
 end, enemiesContent)
-clearSelectionBtn.Parent = enemiesContent
 
 local refreshEnemiesBtn = CreateActionButton("Refresh/Scan Enemies", "Quét lại kẻ địch trong phạm vi 500 stud", function()
     for _, child in pairs(enemiesContent:GetChildren()) do
@@ -1079,35 +1062,70 @@ local refreshEnemiesBtn = CreateActionButton("Refresh/Scan Enemies", "Quét lạ
                 end
             end, enemiesContent
         )
-        toggle.Parent = enemiesContent
     end
 end, enemiesContent)
-refreshEnemiesBtn.Parent = enemiesContent
 
-local dragging, dragInput, dragStart, startPos
-SafeConnect(TitleBar.InputBegan, function(input)
+-- DRAG FUNCTIONALITY (UI CHÍNH - Dùng InputChanged)
+local dragMain = false
+local dragStartMain, startPosMain
+TitleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainContainer.Position
+        dragMain = true
+        dragStartMain = input.Position
+        startPosMain = MainContainer.Position
     end
 end)
-SafeConnect(TitleBar.InputChanged, function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement and dragMain then
+        local delta = input.Position - dragStartMain
+        MainContainer.Position = UDim2.new(startPosMain.X.Scale, startPosMain.X.Offset + delta.X, startPosMain.Y.Scale, startPosMain.Y.Offset + delta.Y)
     end
 end)
-SafeConnect(TitleBar.InputEnded, function(input)
+TitleBar.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
+        dragMain = false
     end
 end)
-SafeConnect(UserInputService.InputChanged, function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainContainer.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+
+-- DRAG FUNCTIONALITY (MINI UI - Dùng InputChanged)
+local dragMini = false
+local dragStartMini, startPosMini
+MiniButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragMini = true
+        dragStartMini = input.Position
+        startPosMini = MiniButton.Position
+        MiniButton.ZIndex = 3
     end
 end)
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement and dragMini then
+        local delta = input.Position - dragStartMini
+        MiniButton.Position = UDim2.new(startPosMini.X.Scale, startPosMini.X.Offset + delta.X, startPosMini.Y.Scale, startPosMini.Y.Offset + delta.Y)
+    end
+end)
+MiniButton.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragMini = false
+        MiniButton.ZIndex = 2
+    end
+end)
+
+
+-- HOTKEY (Insert)
+UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+    if input.KeyCode == Enum.KeyCode.Insert and not gameProcessedEvent then
+        ToggleUI(not HimonoHub.Enabled)
+    end
+end)
+
+-- HOTKEY (Ctrl trái)
+UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+    if input.KeyCode == Enum.KeyCode.LeftControl and not gameProcessedEvent then
+        ToggleUI(not HimonoHub.Enabled)
+    end
+end)
+
 
 EnableAntiAFK()
 
@@ -1125,4 +1143,4 @@ task.spawn(function()
 end)
 
 
-print("👑 Himono Hub v4.7 - FINAL STABILITY FIXED LOADED! (Ready)")
+print("👑 Himono Hub v4.7.2 - FINAL STABILITY FIXED LOADED! (Ready)")
