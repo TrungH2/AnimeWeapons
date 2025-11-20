@@ -1,8 +1,9 @@
--- Himono Hub v4.2 - 
+-- Himono Hub v4.2 - SULFUR EDITION (UPDATED)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local stealthMode = true
@@ -117,8 +118,29 @@ local function FindEnemiesInRange(range)
     return enemies
 end
 
-local function RefreshEnemiesList()
-    return FindEnemiesInRange(100)
+-- NEW: Group enemies by name
+local function GetEnemyGroups()
+    local enemies = FindEnemiesInRange(200)
+    local groups = {}
+    
+    for _, enemy in ipairs(enemies) do
+        if not groups[enemy.Name] then
+            groups[enemy.Name] = {
+                name = enemy.Name,
+                count = 0,
+                nearestDistance = math.huge,
+                models = {}
+            }
+        end
+        
+        groups[enemy.Name].count = groups[enemy.Name].count + 1
+        if enemy.Distance < groups[enemy.Name].nearestDistance then
+            groups[enemy.Name].nearestDistance = enemy.Distance
+        end
+        table.insert(groups[enemy.Name].models, enemy.Model)
+    end
+    
+    return groups
 end
 
 local function AutoAttackLogic()
@@ -134,33 +156,52 @@ local function AutoAttackLogic()
     end
 end
 
+-- IMPROVED: Faster farm selected with anti-cheat protection
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-    local enemies = FindEnemiesInRange(200)
-    local targets = {}
-    for _, enemy in ipairs(enemies) do
-        for _, selectedName in ipairs(selectedEnemyNames) do
-            if enemy.Name == selectedName then
-                table.insert(targets, enemy)
-            end
-        end
-    end
-    table.sort(targets, function(a, b) return a.Distance < b.Distance end)
-    for _, target in ipairs(targets) do
+    
+    local enemyGroups = GetEnemyGroups()
+    
+    for _, enemyName in ipairs(selectedEnemyNames) do
         if not activeLoops["FarmSelected"] then break end
-        if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
-            character.HumanoidRootPart.CFrame = CFrame.new(target.Position + Vector3.new(0, 3, 0))
-            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-            if remote then
-                local attackStart = tick()
-                while tick() - attackStart < 2 and activeLoops["FarmSelected"] do
-                    if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
-                        SafeFire(remote, "Attack", target.Model)
-                        task.wait(0.3)
-                    else
-                        break
+        
+        local group = enemyGroups[enemyName]
+        if group and group.count > 0 then
+            -- Find nearest enemy in this group
+            local nearestEnemy = nil
+            local minDistance = math.huge
+            
+            for _, model in ipairs(group.models) do
+                if model and model:FindFirstChild("Humanoid") and model.Humanoid.Health > 0 then
+                    local distance = (character.HumanoidRootPart.Position - model.Head.Position).Magnitude
+                    if distance < minDistance then
+                        minDistance = distance
+                        nearestEnemy = model
+                    end
+                end
+            end
+            
+            if nearestEnemy then
+                -- Fast teleport with small random offset to avoid anti-cheat
+                local offset = Vector3.new(
+                    math.random(-2, 2),
+                    3,
+                    math.random(-2, 2)
+                )
+                character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Head.Position + offset)
+                
+                local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+                if remote then
+                    -- Quick attack burst
+                    for i = 1, 3 do
+                        if activeLoops["FarmSelected"] and nearestEnemy and nearestEnemy:FindFirstChild("Humanoid") and nearestEnemy.Humanoid.Health > 0 then
+                            SafeFire(remote, "Attack", nearestEnemy)
+                            task.wait(0.1) -- Faster attacks
+                        else
+                            break
+                        end
                     end
                 end
             end
@@ -225,9 +266,21 @@ local function DistributeStat(statName)
 end
 
 local function AutoOpenEggLogic()
-    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-    if remote then
-        SafeFire(remote, "Open Star", {[1]="Egg"})
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    -- Only open egg if near one
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and (obj.Name:lower():find("egg") or obj.Name:lower():find("crate")) then
+            local distance = (character.HumanoidRootPart.Position - obj:GetPivot().Position).Magnitude
+            if distance < 15 then
+                local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
+                if remote then
+                    SafeFire(remote, "Open Star", {[1]="Egg"})
+                end
+                break
+            end
+        end
     end
 end
 
@@ -241,20 +294,24 @@ local function SaveConfig()
         autoOpenEggEnabled = autoOpenEggEnabled,
         stealthMode = stealthMode
     }
-    local encoded = game:GetService("HttpService"):JSONEncode(data)
+    local encoded = HttpService:JSONEncode(data)
     writefile(configFile, encoded)
 end
 
 local function LoadConfig()
     if isfile(configFile) then
-        local encoded = readfile(configFile)
-        local data = game:GetService("HttpService"):JSONDecode(encoded)
-        selectedEnemyNames = data.selectedEnemyNames or {}
-        selectedGachaType = data.selectedGachaType or "Biju"
-        selectedZone = data.selectedZone or "Zone 1"
-        selectedStat = data.selectedStat or "Attack"
-        autoOpenEggEnabled = data.autoOpenEggEnabled or false
-        stealthMode = data.stealthMode or true
+        local success, data = pcall(function()
+            local encoded = readfile(configFile)
+            return HttpService:JSONDecode(encoded)
+        end)
+        if success and data then
+            selectedEnemyNames = data.selectedEnemyNames or {}
+            selectedGachaType = data.selectedGachaType or "Biju"
+            selectedZone = data.selectedZone or "Zone 1"
+            selectedStat = data.selectedStat or "Attack"
+            autoOpenEggEnabled = data.autoOpenEggEnabled or false
+            stealthMode = data.stealthMode or true
+        end
     end
 end
 
@@ -264,7 +321,7 @@ local function DeleteConfig()
     end
 end
 
--- GUI Creation
+-- GUI Creation with PURPLE theme
 local HimonoHub = Instance.new("ScreenGui")
 HimonoHub.Name = "HimonoHubSulfur"
 HimonoHub.ResetOnSpawn = false
@@ -274,7 +331,7 @@ HimonoHub.Parent = game.CoreGui
 local MainContainer = Instance.new("Frame")
 MainContainer.Size = UDim2.new(0, 600, 0, 500)
 MainContainer.Position = UDim2.new(0.5, -300, 0.5, -250)
-MainContainer.BackgroundColor3 = Color3.fromRGB(220, 255, 40)
+MainContainer.BackgroundColor3 = Color3.fromRGB(120, 0, 200) -- Purple
 MainContainer.BorderSizePixel = 0
 MainContainer.Parent = HimonoHub
 
@@ -284,7 +341,7 @@ ContainerCorner.Parent = MainContainer
 
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 45)
-TitleBar.BackgroundColor3 = Color3.fromRGB(180, 220, 40)
+TitleBar.BackgroundColor3 = Color3.fromRGB(80, 0, 160) -- Dark Purple
 TitleBar.Parent = MainContainer
 
 local TitleCorner = Instance.new("UICorner")
@@ -294,8 +351,8 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🟡 HIMONO HUB v4.2 - SULFUR EDITION (FIXED)"
-Title.TextColor3 = Color3.fromRGB(40, 40, 20)
+Title.Text = "🟣 HIMONO HUB v4.2 - PURPLE EDITION"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 18
 Title.Parent = TitleBar
@@ -325,7 +382,7 @@ TabContainer.Size = UDim2.new(1, -20, 0, 40)
 TabContainer.Position = UDim2.new(0, 10, 0, 55)
 TabContainer.BackgroundTransparency = 1
 TabContainer.ScrollBarThickness = 3
-TabContainer.ScrollBarImageColor3 = Color3.fromRGB(180, 220, 40)
+TabContainer.ScrollBarImageColor3 = Color3.fromRGB(160, 0, 255)
 TabContainer.CanvasSize = UDim2.new(2, 0, 0, 0)
 TabContainer.Parent = MainContainer
 
@@ -337,7 +394,7 @@ TabListLayout.Parent = TabContainer
 local ContentContainer = Instance.new("Frame")
 ContentContainer.Size = UDim2.new(1, -20, 1, -120)
 ContentContainer.Position = UDim2.new(0, 10, 0, 105)
-ContentContainer.BackgroundColor3 = Color3.fromRGB(255, 255, 180)
+ContentContainer.BackgroundColor3 = Color3.fromRGB(200, 150, 255) -- Light Purple
 ContentContainer.Parent = MainContainer
 
 local ContentCorner = Instance.new("UICorner")
@@ -348,7 +405,7 @@ local ContentScroll = Instance.new("ScrollingFrame")
 ContentScroll.Size = UDim2.new(1, 0, 1, 0)
 ContentScroll.BackgroundTransparency = 1
 ContentScroll.ScrollBarThickness = 5
-ContentScroll.ScrollBarImageColor3 = Color3.fromRGB(180, 220, 40)
+ContentScroll.ScrollBarImageColor3 = Color3.fromRGB(160, 0, 255)
 ContentScroll.CanvasSize = UDim2.new(0, 0, 2, 0)
 ContentScroll.Parent = ContentContainer
 
@@ -356,18 +413,19 @@ local ContentLayout = Instance.new("UIListLayout")
 ContentLayout.Padding = UDim.new(0, 15)
 ContentLayout.Parent = ContentScroll
 
+-- UPDATED: Removed ENEMIES tab, only keep these tabs
 local tabs = {
     "🏠 MAIN", "🌾 FARM", "🎰 GACHA", "⚡ STATS", 
-    "🚀 TELEPORT", "🥚 OPEN EGG", "⚙️ SETTINGS", "🎯 ENEMIES"
+    "🚀 TELEPORT", "🥚 OPEN EGG", "⚙️ SETTINGS"
 }
 local tabFrames, tabButtons = {}, {}
 
 for i, tabName in pairs(tabs) do
     local tabButton = Instance.new("TextButton")
     tabButton.Size = UDim2.new(0, 120, 1, 0)
-    tabButton.BackgroundColor3 = i == 1 and Color3.fromRGB(255, 255, 40) or Color3.fromRGB(220, 255, 40)
+    tabButton.BackgroundColor3 = i == 1 and Color3.fromRGB(200, 100, 255) or Color3.fromRGB(120, 0, 200)
     tabButton.Text = tabName
-    tabButton.TextColor3 = Color3.fromRGB(40, 40, 20)
+    tabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     tabButton.Font = Enum.Font.GothamBold
     tabButton.TextSize = 12
     tabButton.Parent = TabContainer
@@ -380,7 +438,7 @@ for i, tabName in pairs(tabs) do
     contentFrame.Size = UDim2.new(1, 0, 1, 0)
     contentFrame.BackgroundTransparency = 1
     contentFrame.ScrollBarThickness = 5
-    contentFrame.ScrollBarImageColor3 = Color3.fromRGB(180, 220, 40)
+    contentFrame.ScrollBarImageColor3 = Color3.fromRGB(160, 0, 255)
     contentFrame.CanvasSize = UDim2.new(0, 0, 2, 0)
     contentFrame.Visible = i == 1
     contentFrame.Parent = ContentScroll
@@ -397,7 +455,7 @@ for i, tabName in pairs(tabs) do
             frame.Visible = (name == tabName)
         end
         for name, btn in pairs(tabButtons) do
-            btn.BackgroundColor3 = (name == tabName) and Color3.fromRGB(255, 255, 40) or Color3.fromRGB(220, 255, 40)
+            btn.BackgroundColor3 = (name == tabName) and Color3.fromRGB(200, 100, 255) or Color3.fromRGB(120, 0, 200)
         end
     end)
 end
@@ -412,7 +470,7 @@ function CreateToggleSwitch(text, description, default, callback)
     label.Position = UDim2.new(0, 10, 0, 5)
     label.BackgroundTransparency = 1
     label.Text = text
-    label.TextColor3 = Color3.fromRGB(40,40,20)
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
     label.Font = Enum.Font.GothamBold
     label.TextSize = 14
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -423,7 +481,7 @@ function CreateToggleSwitch(text, description, default, callback)
     desc.Position = UDim2.new(0, 10, 0.5, 0)
     desc.BackgroundTransparency = 1
     desc.Text = description
-    desc.TextColor3 = Color3.fromRGB(120,120,60)
+    desc.TextColor3 = Color3.fromRGB(200, 200, 255)
     desc.Font = Enum.Font.Gotham
     desc.TextSize = 11
     desc.TextXAlignment = Enum.TextXAlignment.Left
@@ -432,9 +490,9 @@ function CreateToggleSwitch(text, description, default, callback)
     local toggle = Instance.new("TextButton")
     toggle.Size = UDim2.new(0, 40, 0, 24)
     toggle.Position = UDim2.new(1, -60, 0.5, -12)
-    toggle.BackgroundColor3 = default and Color3.fromRGB(180, 220, 40) or Color3.fromRGB(255, 255, 40)
+    toggle.BackgroundColor3 = default and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
     toggle.Text = default and "ON" or "OFF"
-    toggle.TextColor3 = Color3.fromRGB(40,40,20)
+    toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
     toggle.Font = Enum.Font.GothamBold
     toggle.TextSize = 12
     toggle.Parent = frame
@@ -442,7 +500,7 @@ function CreateToggleSwitch(text, description, default, callback)
     local toggled = default
     toggle.MouseButton1Click:Connect(function()
         toggled = not toggled
-        toggle.BackgroundColor3 = toggled and Color3.fromRGB(180, 220, 40) or Color3.fromRGB(255, 255, 40)
+        toggle.BackgroundColor3 = toggled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
         toggle.Text = toggled and "ON" or "OFF"
         if callback then callback(toggled) end
     end)
@@ -458,9 +516,9 @@ function CreateActionButton(text, description, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0.5, 0, 0, 32)
     btn.Position = UDim2.new(0, 10, 0, 9)
-    btn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
+    btn.BackgroundColor3 = Color3.fromRGB(160, 0, 255)
     btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(40,40,20)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 13
     btn.Parent = frame
@@ -474,7 +532,7 @@ function CreateActionButton(text, description, callback)
     desc.Position = UDim2.new(0.5, 20, 0, 15)
     desc.BackgroundTransparency = 1
     desc.Text = description
-    desc.TextColor3 = Color3.fromRGB(120,120,60)
+    desc.TextColor3 = Color3.fromRGB(200, 200, 255)
     desc.Font = Enum.Font.Gotham
     desc.TextSize = 11
     desc.TextXAlignment = Enum.TextXAlignment.Left
@@ -497,7 +555,7 @@ function CreateComboBox(text, description, items, callback)
     label.Position = UDim2.new(0, 10, 0, 5)
     label.BackgroundTransparency = 1
     label.Text = text
-    label.TextColor3 = Color3.fromRGB(40,40,20)
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
     label.Font = Enum.Font.GothamBold
     label.TextSize = 14
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -508,7 +566,7 @@ function CreateComboBox(text, description, items, callback)
     desc.Position = UDim2.new(0, 10, 0.5, 0)
     desc.BackgroundTransparency = 1
     desc.Text = description
-    desc.TextColor3 = Color3.fromRGB(120,120,60)
+    desc.TextColor3 = Color3.fromRGB(200, 200, 255)
     desc.Font = Enum.Font.Gotham
     desc.TextSize = 11
     desc.TextXAlignment = Enum.TextXAlignment.Left
@@ -517,9 +575,9 @@ function CreateComboBox(text, description, items, callback)
     local dropdown = Instance.new("TextButton")
     dropdown.Size = UDim2.new(0.4, 0, 0, 32)
     dropdown.Position = UDim2.new(0.55, 0, 0.25, 0)
-    dropdown.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
+    dropdown.BackgroundColor3 = Color3.fromRGB(160, 0, 255)
     dropdown.Text = items[1] or "Select"
-    dropdown.TextColor3 = Color3.fromRGB(40,40,20)
+    dropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
     dropdown.Font = Enum.Font.GothamBold
     dropdown.TextSize = 13
     dropdown.Parent = frame
@@ -533,7 +591,7 @@ function CreateComboBox(text, description, items, callback)
         local menu = Instance.new("Frame")
         menu.Size = UDim2.new(0.4, 0, 0, #items*28)
         menu.Position = UDim2.new(0.55, 0, 0.75, 0)
-        menu.BackgroundColor3 = Color3.fromRGB(255, 255, 180)
+        menu.BackgroundColor3 = Color3.fromRGB(200, 150, 255)
         menu.Parent = frame
         local menuCorner = Instance.new("UICorner")
         menuCorner.CornerRadius = UDim.new(0, 6)
@@ -542,9 +600,9 @@ function CreateComboBox(text, description, items, callback)
             local itemBtn = Instance.new("TextButton")
             itemBtn.Size = UDim2.new(1, 0, 0, 28)
             itemBtn.Position = UDim2.new(0, 0, 0, (i-1)*28)
-            itemBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
+            itemBtn.BackgroundColor3 = Color3.fromRGB(160, 0, 255)
             itemBtn.Text = item
-            itemBtn.TextColor3 = Color3.fromRGB(40,40,20)
+            itemBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
             itemBtn.Font = Enum.Font.Gotham
             itemBtn.TextSize = 12
             itemBtn.Parent = menu
@@ -565,8 +623,8 @@ local mainContent = tabFrames["🏠 MAIN"]
 local mainStatus = Instance.new("TextLabel")
 mainStatus.Size = UDim2.new(1, -20, 0, 30)
 mainStatus.BackgroundTransparency = 1
-mainStatus.Text = "🟡 Himono Hub FIXED - Farm đa mục tiêu!"
-mainStatus.TextColor3 = Color3.fromRGB(40,40,20)
+mainStatus.Text = "🟣 Himono Hub - Farm theo nhóm enemy!"
+mainStatus.TextColor3 = Color3.fromRGB(255, 255, 255)
 mainStatus.Font = Enum.Font.Gotham
 mainStatus.TextSize = 14
 mainStatus.Parent = mainContent
@@ -576,8 +634,8 @@ local autoAttackToggle = CreateToggleSwitch("Enable Auto Attack", "Tự động 
 end)
 autoAttackToggle.Parent = mainContent
 
-local autoFarmSelectedToggle = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ con enemy có TÊN đã chọn (FIXED)", false, function(enabled)
-    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.5) else StopLoop("FarmSelected") end
+local autoFarmSelectedToggle = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên (FAST)", false, function(enabled)
+    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.3) else StopLoop("FarmSelected") end
 end)
 autoFarmSelectedToggle.Parent = mainContent
 
@@ -594,103 +652,93 @@ autoDropsToggle.Parent = mainContent
 -- FARM TAB
 local farmContent = tabFrames["🌾 FARM"]
 
-local selectEnemyBtn = CreateActionButton("Select Enemies to Farm", "Chọn loại enemy để farm", function()
-    local enemies = RefreshEnemiesList()
-    local items = {}
-    for _, enemy in ipairs(enemies) do 
-        table.insert(items, enemy.Name) 
-    end
-
-    if #items == 0 then return end
-
-    local combo = CreateComboBox("Enemy List", "Chọn enemy để farm (lưu tên)", items, function(selected)
-        local found = false
-        for _, name in ipairs(selectedEnemyNames) do
-            if name == selected then found = true; break end
-        end
-        if not found then
-            table.insert(selectedEnemyNames, selected)
-        end
-    end)
-    combo.Parent = farmContent
-end)
-selectEnemyBtn.Parent = farmContent
-
-local clearFarmBtn = CreateActionButton("Clear Farm List", "Xóa danh sách enemy được chọn", function()
-    selectedEnemyNames = {}
-end)
-clearFarmBtn.Parent = farmContent
-
-local showFarmBtn = CreateActionButton("Show Selected List", "Xem danh sách enemy đang farm", function()
-    -- Không print ra console nữa
-end)
-showFarmBtn.Parent = farmContent
-
-local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh sách kẻ địch", function()
+-- NEW: Refresh enemy groups display
+local refreshGroupsBtn = CreateActionButton("Refresh Enemy Groups", "Quét và hiển thị enemy theo nhóm", function()
     for _, child in pairs(farmContent:GetChildren()) do
-        if child:IsA("Frame") and child ~= refreshBtn and child ~= selectEnemyBtn and child ~= clearFarmBtn and child ~= showFarmBtn then
+        if child:IsA("Frame") and string.find(child.Name or "", "GroupFrame") then
             child:Destroy()
         end
     end
 
-    local enemies = RefreshEnemiesList()
-    for _, enemy in ipairs(enemies) do
-        local infoFrame = Instance.new("Frame")
-        infoFrame.Size = UDim2.new(1, 0, 0, 40)
-        infoFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 150)
-        infoFrame.Parent = farmContent
+    local enemyGroups = GetEnemyGroups()
+    
+    for enemyName, group in pairs(enemyGroups) do
+        local groupFrame = Instance.new("Frame")
+        groupFrame.Name = "GroupFrame_" .. enemyName
+        groupFrame.Size = UDim2.new(1, 0, 0, 60)
+        groupFrame.BackgroundColor3 = Color3.fromRGB(180, 120, 255)
+        groupFrame.Parent = farmContent
+
+        local cornerRadius = Instance.new("UICorner")
+        cornerRadius.CornerRadius = UDim.new(0, 6)
+        cornerRadius.Parent = groupFrame
 
         local nameLabel = Instance.new("TextLabel")
-        nameLabel.Size = UDim2.new(0.6, 0, 1, 0)
-        nameLabel.Position = UDim2.new(0, 10, 0, 0)
+        nameLabel.Size = UDim2.new(0.6, 0, 0.5, 0)
+        nameLabel.Position = UDim2.new(0, 10, 0, 5)
         nameLabel.BackgroundTransparency = 1
-        nameLabel.Text = "👹 " .. enemy.Name .. " | HP: " .. math.floor(enemy.Health)
-        nameLabel.TextColor3 = Color3.fromRGB(40, 40, 20)
+        nameLabel.Text = "👹 " .. enemyName
+        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
         nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.TextSize = 12
+        nameLabel.TextSize = 14
         nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        nameLabel.Parent = infoFrame
+        nameLabel.Parent = groupFrame
+
+        local infoLabel = Instance.new("TextLabel")
+        infoLabel.Size = UDim2.new(0.6, 0, 0.5, 0)
+        infoLabel.Position = UDim2.new(0, 10, 0.5, 0)
+        infoLabel.BackgroundTransparency = 1
+        infoLabel.Text = "📊 Số lượng: " .. group.count .. " | Khoảng cách: " .. math.floor(group.nearestDistance) .. "m"
+        infoLabel.TextColor3 = Color3.fromRGB(230, 230, 255)
+        infoLabel.Font = Enum.Font.Gotham
+        infoLabel.TextSize = 11
+        infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+        infoLabel.Parent = groupFrame
 
         local selectBtn = Instance.new("TextButton")
-        selectBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
-        selectBtn.Position = UDim2.new(0.7, 0, 0.15, 0)
-        selectBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
-        selectBtn.Text = "🎯 SELECT"
-        selectBtn.TextColor3 = Color3.fromRGB(40, 40, 20)
+        selectBtn.Size = UDim2.new(0.3, 0, 0.6, 0)
+        selectBtn.Position = UDim2.new(0.65, 0, 0.2, 0)
+        selectBtn.BackgroundColor3 = Color3.fromRGB(160, 0, 255)
+        selectBtn.Text = "🎯 CHỌN NHÓM"
+        selectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         selectBtn.Font = Enum.Font.GothamBold
         selectBtn.TextSize = 11
-        selectBtn.Parent = infoFrame
+        selectBtn.Parent = groupFrame
+
+        local selectCorner = Instance.new("UICorner")
+        selectCorner.CornerRadius = UDim.new(0, 4)
+        selectCorner.Parent = selectBtn
 
         local isSelected = false
         for _, selectedName in ipairs(selectedEnemyNames) do
-            if selectedName == enemy.Name then
+            if selectedName == enemyName then
                 isSelected = true
                 break
             end
         end
 
         if isSelected then
-            selectBtn.BackgroundColor3 = Color3.fromRGB(180, 220, 40)
-            selectBtn.Text = "✅ SELECTED"
+            selectBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+            selectBtn.Text = "✅ ĐÃ CHỌN"
         end
 
         selectBtn.MouseButton1Click:Connect(function()
             isSelected = not isSelected
             if isSelected then
-                selectBtn.BackgroundColor3 = Color3.fromRGB(180, 220, 40)
-                selectBtn.Text = "✅ SELECTED"
+                selectBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+                selectBtn.Text = "✅ ĐÃ CHỌN"
                 local found = false
                 for _, name in ipairs(selectedEnemyNames) do
-                    if name == enemy.Name then found = true; break end
+                    if name == enemyName then found = true; break end
                 end
                 if not found then
-                    table.insert(selectedEnemyNames, enemy.Name)
+                    table.insert(selectedEnemyNames, enemyName)
                 end
             else
-                selectBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
-                selectBtn.Text = "🎯 SELECT"
+                selectBtn.BackgroundColor3 = Color3.fromRGB(160, 0, 255)
+                selectBtn.Text = "🎯 CHỌN NHÓM"
                 for i, name in ipairs(selectedEnemyNames) do
-                    if name == enemy.Name then
+                    if name == enemyName then
                         table.remove(selectedEnemyNames, i)
                         break
                     end
@@ -699,22 +747,23 @@ local refreshBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh s�
         end)
     end
 end)
-refreshBtn.Parent = farmContent
+refreshGroupsBtn.Parent = farmContent
 
-local saveConfigBtn = CreateActionButton("Save Config", "Lưu lại cấu hình hiện tại", function()
-    SaveConfig()
+local clearFarmBtn = CreateActionButton("Clear Farm List", "Xóa danh sách enemy được chọn", function()
+    selectedEnemyNames = {}
+    -- Refresh display to update buttons
+    refreshGroupsBtn.MouseButton1Click:Fire()
 end)
-saveConfigBtn.Parent = farmContent
+clearFarmBtn.Parent = farmContent
 
-local loadConfigBtn = CreateActionButton("Load Config", "Tải lại cấu hình đã lưu", function()
-    LoadConfig()
+local showSelectedBtn = CreateActionButton("Show Selected Groups", "Hiển thị các nhóm đã chọn", function()
+    if #selectedEnemyNames == 0 then
+        mainStatus.Text = "📭 Chưa chọn nhóm enemy nào!"
+    else
+        mainStatus.Text = "📋 Đang farm " .. #selectedEnemyNames .. " nhóm: " .. table.concat(selectedEnemyNames, ", ")
+    end
 end)
-loadConfigBtn.Parent = farmContent
-
-local deleteConfigBtn = CreateActionButton("Delete Config", "Xóa file config đã lưu", function()
-    DeleteConfig()
-end)
-deleteConfigBtn.Parent = farmContent
+showSelectedBtn.Parent = farmContent
 
 -- GACHA TAB
 local gachaContent = tabFrames["🎰 GACHA"]
@@ -768,7 +817,7 @@ local openEggBtn = CreateActionButton("Open Egg", "Mở egg gần bạn", functi
 end)
 openEggBtn.Parent = eggContent
 
-local autoOpenEggToggle = CreateToggleSwitch("Enable Auto Open Egg", "Tự động mở egg khi gần", false, function(enabled)
+local autoOpenEggToggle = CreateToggleSwitch("Enable Auto Open Egg", "Tự động mở egg khi gần (15m)", false, function(enabled)
     autoOpenEggEnabled = enabled
     if enabled then
         StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2)
@@ -787,101 +836,34 @@ antiAfkToggle.Parent = settingsContent
 
 local stealthToggle = CreateToggleSwitch("Enable Stealth Mode", "Ẩn hoạt động khỏi server", true, function(enabled)
     stealthMode = enabled
+    StealthIndicator.BackgroundColor3 = enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    StealthLabel.Text = enabled and "STEALTH: ON" or "STEALTH: OFF"
+    StealthLabel.TextColor3 = enabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
 end)
 stealthToggle.Parent = settingsContent
 
--- ENEMIES TAB
-local enemiesContent = tabFrames["🎯 ENEMIES"]
-local refreshEnemiesBtn = CreateActionButton("Refresh Enemy List", "Quét lại danh sách kẻ địch", function()
-    for _, child in pairs(enemiesContent:GetChildren()) do
-        if child:IsA("Frame") and child ~= refreshEnemiesBtn then child:Destroy() end
-    end
-    local enemies = RefreshEnemiesList()
-    for _, enemy in ipairs(enemies) do
-        local infoFrame = Instance.new("Frame")
-        infoFrame.Size = UDim2.new(1, 0, 0, 60)
-        infoFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 150)
-        infoFrame.Parent = enemiesContent
+-- MOVED: Config buttons to SETTINGS tab
+local saveConfigBtn = CreateActionButton("Save Config", "Lưu lại cấu hình hiện tại", function()
+    SaveConfig()
+    mainStatus.Text = "💾 Đã lưu cấu hình!"
+end)
+saveConfigBtn.Parent = settingsContent
 
-        local cornerRadius = Instance.new("UICorner")
-        cornerRadius.CornerRadius = UDim.new(0, 6)
-        cornerRadius.Parent = infoFrame
-
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Size = UDim2.new(0.7, 0, 0.5, 0)
-        nameLabel.Position = UDim2.new(0, 10, 0, 5)
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.Text = "👹 " .. enemy.Name
-        nameLabel.TextColor3 = Color3.fromRGB(40, 40, 20)
-        nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.TextSize = 12
-        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        nameLabel.Parent = infoFrame
-
-        local distLabel = Instance.new("TextLabel")
-        distLabel.Size = UDim2.new(0.7, 0, 0.5, 0)
-        distLabel.Position = UDim2.new(0, 10, 0.5, 0)
-        distLabel.BackgroundTransparency = 1
-        distLabel.Text = "📍 Distance: " .. math.floor(enemy.Distance) .. "m | HP: " .. math.floor(enemy.Health)
-        distLabel.TextColor3 = Color3.fromRGB(100, 100, 60)
-        distLabel.Font = Enum.Font.Gotham
-        distLabel.TextSize = 11
-        distLabel.TextXAlignment = Enum.TextXAlignment.Left
-        distLabel.Parent = infoFrame
-
-        local selectBtn = Instance.new("TextButton")
-        selectBtn.Size = UDim2.new(0.25, 0, 0.6, 0)
-        selectBtn.Position = UDim2.new(0.72, 0, 0.2, 0)
-        selectBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
-        selectBtn.Text = "🎯 SELECT"
-        selectBtn.TextColor3 = Color3.fromRGB(40, 40, 20)
-        selectBtn.Font = Enum.Font.GothamBold
-        selectBtn.TextSize = 11
-        selectBtn.Parent = infoFrame
-
-        local selectCorner = Instance.new("UICorner")
-        selectCorner.CornerRadius = UDim.new(0, 4)
-        selectCorner.Parent = selectBtn
-
-        local isSelected = false
-        for _, selectedName in ipairs(selectedEnemyNames) do
-            if selectedName == enemy.Name then
-                isSelected = true
-                break
-            end
-        end
-
-        if isSelected then
-            selectBtn.BackgroundColor3 = Color3.fromRGB(180, 220, 40)
-            selectBtn.Text = "✅ SELECTED"
-        end
-
-        selectBtn.MouseButton1Click:Connect(function()
-            isSelected = not isSelected
-            if isSelected then
-                selectBtn.BackgroundColor3 = Color3.fromRGB(180, 220, 40)
-                selectBtn.Text = "✅ SELECTED"
-                local found = false
-                for _, name in ipairs(selectedEnemyNames) do
-                    if name == enemy.Name then found = true; break end
-                end
-                if not found then
-                    table.insert(selectedEnemyNames, enemy.Name)
-                end
-            else
-                selectBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 40)
-                selectBtn.Text = "🎯 SELECT"
-                for i, name in ipairs(selectedEnemyNames) do
-                    if name == enemy.Name then
-                        table.remove(selectedEnemyNames, i)
-                        break
-                    end
-                end
-            end
-        end)
+local loadConfigBtn = CreateActionButton("Load Config", "Tải lại cấu hình đã lưu", function()
+    LoadConfig()
+    mainStatus.Text = "📂 Đã tải cấu hình!"
+    -- Refresh farm display
+    if farmContent.Visible then
+        refreshGroupsBtn.MouseButton1Click:Fire()
     end
 end)
-refreshEnemiesBtn.Parent = enemiesContent
+loadConfigBtn.Parent = settingsContent
+
+local deleteConfigBtn = CreateActionButton("Delete Config", "Xóa file config đã lưu", function()
+    DeleteConfig()
+    mainStatus.Text = "🗑️ Đã xóa cấu hình!"
+end)
+deleteConfigBtn.Parent = settingsContent
 
 -- DRAG FUNCTIONALITY
 local dragging, dragInput, dragStart, startPos
@@ -909,8 +891,7 @@ SafeConnect(UserInputService.InputChanged, function(input)
     end
 end)
 
-EnableAntiAFK()
-
+-- Auto-adjust canvas sizes
 task.spawn(function()
     while true do
         for _, frame in pairs(tabFrames) do
@@ -920,3 +901,12 @@ task.spawn(function()
         task.wait(0.5)
     end
 end)
+
+-- Initialize
+EnableAntiAFK()
+LoadConfig()
+
+print("🟣 Himono Hub v4.2 - PURPLE EDITION LOADED!")
+print("✅ Farm theo nhóm enemy - Chọn 1 lần, farm tất cả!")
+print("✅ Auto open egg chỉ khi gần - Chống spam!")
+print("✅ Giao diện màu tím - Đẹp và mới lạ!")
