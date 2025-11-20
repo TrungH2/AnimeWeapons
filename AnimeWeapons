@@ -1,4 +1,5 @@
--- Himono Hub v4.2 - PURPLE EDITION (FULL AUTO-LOAD FIXED)
+-- Himono Hub v4.2 - PURPLE EDITION (FINAL VERSION: SPEED FARM / AUTO-LOAD / MINI-UI)
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -6,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
+-- Biến Trạng Thái Cốt Lõi
 local stealthMode = true
 local safeConnections = {}
 local activeLoops = {}
@@ -15,7 +17,7 @@ local selectedZone = "Zone 1"
 local selectedStat = "Attack"
 local autoOpenEggEnabled = false
 
--- NEW: Biến theo dõi trạng thái các toggle
+-- NEW: Biến theo dõi trạng thái các toggle để lưu/tải
 local selectedFarmEnabled = false
 local autoAttackEnabled = false
 local farmRandomEnabled = false
@@ -87,7 +89,7 @@ local function DisableAntiAFK()
     end
 end
 
--- SIMPLIFIED: Không lọc NPC như phiên bản vàng
+-- SIMPLIFIED: Không lọc NPC
 local function FindEnemiesInRange(range)
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return {} end
@@ -99,7 +101,6 @@ local function FindEnemiesInRange(range)
             for _, player in pairs(Players:GetPlayers()) do
                 if player.Character == obj then isPlayer = true; break end
             end
-            -- ĐƠN GIẢN: Chỉ kiểm tra không phải player và còn máu
             if not isPlayer and obj.Humanoid.Health > 0 then
                 local distance = (playerPos - obj.Head.Position).Magnitude
                 if distance <= (range or 100) then
@@ -119,11 +120,7 @@ local function FindEnemiesInRange(range)
     return enemies
 end
 
-local function RefreshEnemiesList()
-    return FindEnemiesInRange(100)
-end
-
--- NEW: Group enemies by name (tính năng mới)
+-- Group enemies by name
 local function GetEnemyGroups()
     local enemies = FindEnemiesInRange(200)
     local groups = {}
@@ -146,21 +143,7 @@ local function GetEnemyGroups()
     return groups
 end
 
--- Auto farm logic
-local function AutoAttackLogic()
-    local enemies = FindEnemiesInRange(50)
-    if #enemies > 0 then
-        local nearestEnemy = enemies[1]
-        local character = LocalPlayer.Character
-        if character and character:FindFirstChild("HumanoidRootPart") then
-            character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + Vector3.new(0,2,0))
-            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-            if remote then SafeFire(remote, "Attack", nearestEnemy.Model) end
-        end
-    end
-end
-
--- IMPROVED: Farm Vòng Lặp Mục Tiêu Tốc Độ Cao (Target Rotation)
+-- Auto farm logic (Vòng Lặp Mục Tiêu Tốc Độ Cao)
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
     
@@ -189,12 +172,11 @@ local function FarmSelectedLogic()
     for _, target in ipairs(targets) do
         if not activeLoops["FarmSelected"] then break end 
         
-        -- Chỉ tấn công nếu mục tiêu còn tồn tại và còn máu
         if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
             
             -- Teleport đến mục tiêu (sử dụng offset ngẫu nhiên nhẹ)
             local offset = Vector3.new(
-                math.random(-10, 10) / 10, -- Offset ngẫu nhiên nhỏ
+                math.random(-10, 10) / 10,
                 3,
                 math.random(-10, 10) / 10
             )
@@ -204,13 +186,27 @@ local function FarmSelectedLogic()
             if remote then 
                 -- Tấn công nhanh (burst attack)
                 SafeFire(remote, "Attack", target.Model)
-                task.wait(0.05) -- Độ trễ rất nhỏ giữa các lần tấn công
+                task.wait(0.05)
                 SafeFire(remote, "Attack", target.Model)
             end
         end
         
-        -- Độ trễ ngắn trước khi chuyển sang mục tiêu tiếp theo trong danh sách
+        -- Độ trễ ngắn trước khi chuyển sang mục tiêu tiếp theo
         task.wait(0.1) 
+    end
+end
+
+-- Auto farm logic
+local function AutoAttackLogic()
+    local enemies = FindEnemiesInRange(50)
+    if #enemies > 0 then
+        local nearestEnemy = enemies[1]
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + Vector3.new(0,2,0))
+            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+            if remote then SafeFire(remote, "Attack", nearestEnemy.Model) end
+        end
     end
 end
 
@@ -241,6 +237,7 @@ local function AutoCollectLogic()
     end
 end
 
+-- Các hàm cơ bản (Gacha, Teleport, Stats)
 local function StartGacha(gachaType)
     local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
     if remote then
@@ -264,12 +261,11 @@ local function DistributeStat(statName)
     end
 end
 
--- FIXED: Auto Open Egg với logic kiểm tra khoảng cách
+-- Auto Open Egg với logic kiểm tra khoảng cách
 local function AutoOpenEggLogic()
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
     
-    -- Chỉ mở egg khi gần (15m)
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and (obj.Name:lower():find("egg") or obj.Name:lower():find("crate")) then
             local distance = (character.HumanoidRootPart.Position - obj:GetPivot().Position).Magnitude
@@ -284,7 +280,7 @@ local function AutoOpenEggLogic()
     end
 end
 
--- FIXED: Thêm hàm Save/Load Config với tất cả trạng thái
+-- Save/Load Config
 local function SaveConfig()
     local data = {
         selectedEnemyNames = selectedEnemyNames,
@@ -293,6 +289,7 @@ local function SaveConfig()
         selectedStat = selectedStat,
         autoOpenEggEnabled = autoOpenEggEnabled,
         stealthMode = stealthMode,
+        
         -- NEW: Lưu tất cả trạng thái toggle
         selectedFarmEnabled = activeLoops["FarmSelected"] or false,
         autoAttackEnabled = activeLoops["AutoAttack"] or false,
@@ -336,17 +333,57 @@ local function DeleteConfig()
     end
 end
 
--- GUI Creation với màu TÍM
+-- GUI Initialization
 local HimonoHub = Instance.new("ScreenGui")
 HimonoHub.Name = "HimonoHubPurple"
 HimonoHub.ResetOnSpawn = false
 HimonoHub.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 HimonoHub.Parent = game.CoreGui
+HimonoHub.Enabled = true -- Mặc định hiện
 
+-- MINI UI (Nút Neo)
+local HimonoMini = Instance.new("ScreenGui")
+HimonoMini.Name = "HimonoHubMini"
+HimonoMini.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+HimonoMini.Enabled = false -- Mặc định ẩn
+HimonoMini.Parent = game.CoreGui
+
+-- HÀM ẨN/HIỆN (Global Toggle)
+local function ToggleUI(showMain)
+    if showMain then
+        -- Hiện UI Chính, Ẩn UI Mini
+        HimonoHub.Enabled = true
+        HimonoMini.Enabled = false
+    else
+        -- Ẩn UI Chính, Hiện UI Mini
+        HimonoHub.Enabled = false
+        HimonoMini.Enabled = true
+    end
+end
+
+local MiniButton = Instance.new("TextButton")
+MiniButton.Size = UDim2.new(0, 40, 0, 40)
+MiniButton.Position = UDim2.new(1, -50, 0, 50) -- Góc trên bên phải
+MiniButton.BackgroundColor3 = Color3.fromRGB(120, 0, 200) -- Purple
+MiniButton.Text = "🟣"
+MiniButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MiniButton.Font = Enum.Font.GothamBold
+MiniButton.TextSize = 24
+MiniButton.Parent = HimonoMini
+
+local MiniCorner = Instance.new("UICorner")
+MiniCorner.CornerRadius = UDim.new(1, 0)
+MiniCorner.Parent = MiniButton
+
+SafeConnect(MiniButton.MouseButton1Click, function()
+    ToggleUI(true)
+end)
+
+-- Tạo Main Container
 local MainContainer = Instance.new("Frame")
 MainContainer.Size = UDim2.new(0, 600, 0, 500)
 MainContainer.Position = UDim2.new(0.5, -300, 0.5, -250)
-MainContainer.BackgroundColor3 = Color3.fromRGB(120, 0, 200) -- Purple
+MainContainer.BackgroundColor3 = Color3.fromRGB(120, 0, 200) 
 MainContainer.BorderSizePixel = 0
 MainContainer.Parent = HimonoHub
 
@@ -356,7 +393,7 @@ ContainerCorner.Parent = MainContainer
 
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 45)
-TitleBar.BackgroundColor3 = Color3.fromRGB(80, 0, 160) -- Dark Purple
+TitleBar.BackgroundColor3 = Color3.fromRGB(80, 0, 160) 
 TitleBar.Parent = MainContainer
 
 local TitleCorner = Instance.new("UICorner")
@@ -372,6 +409,7 @@ Title.Font = Enum.Font.GothamBold
 Title.TextSize = 18
 Title.Parent = TitleBar
 
+-- Stealth Indicator
 local StealthIndicator = Instance.new("Frame")
 StealthIndicator.Size = UDim2.new(0, 12, 0, 12)
 StealthIndicator.Position = UDim2.new(1, -90, 0.5, -6)
@@ -392,6 +430,27 @@ StealthLabel.Font = Enum.Font.Gotham
 StealthLabel.TextSize = 11
 StealthLabel.Parent = TitleBar
 
+-- NEW: Nút Ẩn UI (trên TitleBar của UI chính)
+local HideButton = Instance.new("TextButton")
+HideButton.Name = "HideButton"
+HideButton.Size = UDim2.new(0, 30, 0, 30)
+HideButton.Position = UDim2.new(1, -35, 0.5, -15)
+HideButton.BackgroundColor3 = Color3.fromRGB(160, 0, 255)
+HideButton.Text = "➖" 
+HideButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+HideButton.Font = Enum.Font.GothamBold
+HideButton.TextSize = 18
+HideButton.Parent = TitleBar
+
+local HideCorner = Instance.new("UICorner")
+HideCorner.CornerRadius = UDim.new(0, 6)
+HideCorner.Parent = HideButton
+
+SafeConnect(HideButton.MouseButton1Click, function()
+    ToggleUI(false)
+end)
+
+
 local TabContainer = Instance.new("ScrollingFrame")
 TabContainer.Size = UDim2.new(1, -20, 0, 40)
 TabContainer.Position = UDim2.new(0, 10, 0, 55)
@@ -409,7 +468,7 @@ TabListLayout.Parent = TabContainer
 local ContentContainer = Instance.new("Frame")
 ContentContainer.Size = UDim2.new(1, -20, 1, -120)
 ContentContainer.Position = UDim2.new(0, 10, 0, 105)
-ContentContainer.BackgroundColor3 = Color3.fromRGB(200, 150, 255) -- Light Purple
+ContentContainer.BackgroundColor3 = Color3.fromRGB(200, 150, 255) 
 ContentContainer.Parent = MainContainer
 
 local ContentCorner = Instance.new("UICorner")
@@ -428,7 +487,6 @@ local ContentLayout = Instance.new("UIListLayout")
 ContentLayout.Padding = UDim.new(0, 15)
 ContentLayout.Parent = ContentScroll
 
--- UPDATED: Chỉ giữ các tab chính
 local tabs = {
     "🏠 MAIN", "🌾 FARM", "🎰 GACHA", "⚡ STATS", 
     "🚀 TELEPORT", "🥚 OPEN EGG", "⚙️ SETTINGS"
@@ -683,7 +741,6 @@ autoDropsToggleFrame.Parent = mainContent
 -- FARM TAB
 local farmContent = tabFrames["🌾 FARM"]
 
--- NEW: Refresh enemy groups display
 local refreshGroupsBtn = CreateActionButton("Refresh Enemy Groups", "Quét và hiển thị enemy theo nhóm", function()
     for _, child in pairs(farmContent:GetChildren()) do
         if child:IsA("Frame") and string.find(child.Name or "", "GroupFrame") then
@@ -847,7 +904,6 @@ local openEggBtn = CreateActionButton("Open Egg", "Mở egg gần bạn", functi
 end)
 openEggBtn.Parent = eggContent
 
--- FIXED: Auto Open Egg với logic kiểm tra khoảng cách
 autoOpenEggToggleFrame = CreateToggleSwitch("Enable Auto Open Egg", "Tự động mở egg khi gần (15m)", false, function(enabled)
     autoOpenEggEnabled = enabled
     if enabled then
@@ -875,7 +931,7 @@ stealthToggleFrame = CreateToggleSwitch("Enable Stealth Mode", "Ẩn hoạt đ�
 end)
 stealthToggleFrame.Parent = settingsContent
 
--- FIXED: Thêm nút Config vào SETTINGS
+-- Thêm nút Config vào SETTINGS
 local saveConfigBtn = CreateActionButton("Save Config", "Lưu lại cấu hình hiện tại", function()
     SaveConfig()
     mainStatus.Text = "💾 Đã lưu cấu hình!"
@@ -920,7 +976,7 @@ local function ApplyLoadedConfig()
     if antiAFKEnabled then EnableAntiAFK() else DisableAntiAFK() end
     
     -- Refresh farm display nếu đang ở tab FARM
-    if farmContent.Visible then
+    if tabFrames["🌾 FARM"].Visible then
         refreshGroupsBtn.MouseButton1Click:Fire()
     end
 end
@@ -951,6 +1007,13 @@ SafeConnect(UserInputService.InputChanged, function(input)
     end
 end)
 
+-- NEW: Phím tắt Insert để ẩn/hiện UI
+SafeConnect(UserInputService.InputBegan, function(input, gameProcessedEvent)
+    if input.KeyCode == Enum.KeyCode.Insert and not gameProcessedEvent then
+        ToggleUI(not HimonoHub.Enabled)
+    end
+end)
+
 -- Auto-adjust canvas sizes
 task.spawn(function()
     while true do
@@ -963,10 +1026,7 @@ task.spawn(function()
 end)
 
 -- Initialize
-LoadConfig() -- Tải config trước
-ApplyLoadedConfig() -- Áp dụng config đã load
+LoadConfig() 
+ApplyLoadedConfig()
 
-print("🟣 HIMONO HUB v4.2 - AUTO LOAD FIXED EDITION LOADED!")
-print("✅ TẤT CẢ nút toggle đều nhớ trạng thái khi load lại!")
-print("⚡ Tốc độ farm: 0.1s - Target Rotation Mode")
-print("💾 Config system hoàn chỉnh")
+print("🟣 HIMONO HUB v4.2 - FULLY LOADED!")
