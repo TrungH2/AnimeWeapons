@@ -1,4 +1,4 @@
--- Himono Hub v4.2 - PURPLE EDITION (FULLY FIXED)
+-- Himono Hub v4.2 - PURPLE EDITION (SPEED FARM VERSION)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -145,33 +145,57 @@ local function AutoAttackLogic()
     end
 end
 
--- FIXED: Farm đơn giản như phiên bản vàng nhưng có cải tiến
+-- IMPROVED: Farm Vòng Lặp Mục Tiêu Tốc Độ Cao (Target Rotation)
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
     
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
     
-    local enemies = FindEnemiesInRange(100)
-    local targetEnemy = nil
-    local nearestDistance = math.huge
+    local enemies = FindEnemiesInRange(200) -- Phạm vi quét rộng
+    local targets = {}
     
-    -- Tìm enemy gần nhất có TÊN nằm trong danh sách chọn
+    -- Lọc ra TẤT CẢ các kẻ địch có tên đã chọn
     for _, enemy in ipairs(enemies) do
         for _, selectedName in ipairs(selectedEnemyNames) do
             if enemy.Name == selectedName then
-                if enemy.Distance < nearestDistance then
-                    nearestDistance = enemy.Distance
-                    targetEnemy = enemy
-                end
+                table.insert(targets, enemy)
+                break 
             end
         end
     end
     
-    if targetEnemy then
-        character.HumanoidRootPart.CFrame = CFrame.new(targetEnemy.Position + Vector3.new(0,2,0))
-        local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-        if remote then SafeFire(remote, "Attack", targetEnemy.Model) end
+    -- Sắp xếp danh sách mục tiêu theo khoảng cách gần nhất để bắt đầu vòng lặp
+    table.sort(targets, function(a, b) return a.Distance < b.Distance end)
+    
+    if #targets == 0 then return end
+    
+    -- Tấn công từng mục tiêu theo thứ tự
+    for _, target in ipairs(targets) do
+        if not activeLoops["FarmSelected"] then break end 
+        
+        -- Chỉ tấn công nếu mục tiêu còn tồn tại và còn máu
+        if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
+            
+            -- Teleport đến mục tiêu (sử dụng offset ngẫu nhiên nhẹ)
+            local offset = Vector3.new(
+                math.random(-10, 10) / 10, -- Offset ngẫu nhiên nhỏ
+                3,
+                math.random(-10, 10) / 10
+            )
+            character.HumanoidRootPart.CFrame = CFrame.new(target.Position + offset)
+            
+            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+            if remote then 
+                -- Tấn công nhanh (burst attack)
+                SafeFire(remote, "Attack", target.Model)
+                task.wait(0.05) -- Độ trễ rất nhỏ giữa các lần tấn công
+                SafeFire(remote, "Attack", target.Model)
+            end
+        end
+        
+        -- Độ trễ ngắn trước khi chuyển sang mục tiêu tiếp theo trong danh sách
+        task.wait(0.1) 
     end
 end
 
@@ -312,7 +336,7 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🟣 HIMONO HUB v4.2 - PURPLE EDITION"
+Title.Text = "🟣 HIMONO HUB v4.2 - SPEED FARM"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 18
@@ -584,7 +608,7 @@ local mainContent = tabFrames["🏠 MAIN"]
 local mainStatus = Instance.new("TextLabel")
 mainStatus.Size = UDim2.new(1, -20, 0, 30)
 mainStatus.BackgroundTransparency = 1
-mainStatus.Text = "🟣 Himono Hub - Farm theo nhóm enemy!"
+mainStatus.Text = "🟣 SPEED FARM - Target Rotation Mode"
 mainStatus.TextColor3 = Color3.fromRGB(255, 255, 255)
 mainStatus.Font = Enum.Font.Gotham
 mainStatus.TextSize = 14
@@ -595,8 +619,10 @@ local autoAttackToggle = CreateToggleSwitch("Enable Auto Attack", "Tự động 
 end)
 autoAttackToggle.Parent = mainContent
 
-local autoFarmSelectedToggle = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên", false, function(enabled)
-    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.5) else StopLoop("FarmSelected") end
+-- UPDATED: Vòng lặp tốc độ cao 0.1s
+local autoFarmSelectedToggle = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên (SPEED: 0.1s)", false, function(enabled)
+    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) else StopLoop("FarmSelected") end 
+    -- Đã thay đổi interval thành 0.1
 end)
 autoFarmSelectedToggle.Parent = mainContent
 
@@ -867,4 +893,4 @@ end)
 EnableAntiAFK()
 LoadConfig() -- Tự động load config khi khởi chạy
 
-print("🟣 Himono Hub v4.2 - PURPLE EDITION LOADED!")
+print("🟣 HIMONO HUB v4.2 - SPEED FARM EDITION LOADED!")
