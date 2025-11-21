@@ -1,4 +1,4 @@
--- Himono Hub v4.4 - DARK EDITION (MODERN UI / DUNGEON SYSTEM / CONFIG PROFILES)
+-- Himono Hub v4.3 - DARK EDITION (MODERN UI / DUNGEON SYSTEM / CONFIG PROFILES)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -18,8 +18,6 @@ local selectedZone = "Zone 1"
 local selectedStat = "Mastery" -- Mặc định là Mastery
 local autoOpenEggEnabled = false
 local autoStatEnabled = false -- NEW: Auto stat
-local autoRankUpEnabled = false -- NEW: Auto Rank Up
-local autoM1ClickEnabled = false -- NEW: Auto M1 Click
 
 -- NEW: Biến dungeon system
 local selectedDungeonMode = "Easy"
@@ -54,17 +52,15 @@ end
 
 -- Màu sắc theme mới (Dark Modern)
 local ColorTheme = {
-    Background = Color3.fromRGB(10, 10, 15),
-    Secondary = Color3.fromRGB(20, 20, 30),
-    Accent = Color3.fromRGB(0, 170, 255),
-    AccentHover = Color3.fromRGB(0, 200, 255),
+    Background = Color3.fromRGB(15, 15, 20),
+    Secondary = Color3.fromRGB(25, 25, 35),
+    Accent = Color3.fromRGB(0, 150, 255),
+    AccentHover = Color3.fromRGB(0, 170, 255),
     Text = Color3.fromRGB(240, 240, 240),
     TextSecondary = Color3.fromRGB(180, 180, 200),
-    Success = Color3.fromRGB(0, 230, 118),
-    Danger = Color3.fromRGB(255, 82, 82),
-    Warning = Color3.fromRGB(255, 213, 0),
-    RankUp = Color3.fromRGB(255, 128, 0),
-    M1Click = Color3.fromRGB(156, 39, 176)
+    Success = Color3.fromRGB(0, 200, 100),
+    Danger = Color3.fromRGB(220, 60, 60),
+    Warning = Color3.fromRGB(255, 180, 0)
 }
 
 -- Safe remote fire
@@ -227,83 +223,6 @@ local function GetEnemyGroups()
     return groups
 end
 
--- NEW: Hàm quản lý trạng thái farm toàn cục
-local function SetFarmState(newState)
-    -- newState: "selected", "dungeon", "random", "none"
-    
-    if newState == "selected" then
-        -- Tắt các farm khác
-        if autoFarmDungeonEnabled then
-            autoFarmDungeonEnabled = false
-            StopLoop("FarmDungeon")
-            if dungeonToggleFrame then
-                UpdateToggleButton(dungeonToggleFrame, false)
-            end
-        end
-        if farmRandomEnabled then
-            farmRandomEnabled = false
-            StopLoop("FarmRandom")
-            if autoFarmRandomToggleFrame then
-                UpdateToggleButton(autoFarmRandomToggleFrame, false)
-            end
-        end
-        
-        -- Bật selected farm
-        selectedFarmEnabled = true
-        StartLoop("FarmSelected", FarmSelectedLogic, 0.1)
-        
-    elseif newState == "dungeon" then
-        -- Tắt các farm khác
-        if selectedFarmEnabled then
-            selectedFarmEnabled = false
-            StopLoop("FarmSelected")
-            if autoFarmSelectedToggleFrame then
-                UpdateToggleButton(autoFarmSelectedToggleFrame, false)
-            end
-        end
-        if farmRandomEnabled then
-            farmRandomEnabled = false
-            StopLoop("FarmRandom")
-            if autoFarmRandomToggleFrame then
-                UpdateToggleButton(autoFarmRandomToggleFrame, false)
-            end
-        end
-        
-        -- Bật dungeon farm
-        autoFarmDungeonEnabled = true
-        StartLoop("FarmDungeon", FarmDungeonLogic, 0.2)
-        
-    elseif newState == "random" then
-        -- Tắt các farm khác
-        if selectedFarmEnabled then
-            selectedFarmEnabled = false
-            StopLoop("FarmSelected")
-            if autoFarmSelectedToggleFrame then
-                UpdateToggleButton(autoFarmSelectedToggleFrame, false)
-            end
-        end
-        if autoFarmDungeonEnabled then
-            autoFarmDungeonEnabled = false
-            StopLoop("FarmDungeon")
-            if dungeonToggleFrame then
-                UpdateToggleButton(dungeonToggleFrame, false)
-            end
-        end
-        
-        -- Bật random farm
-        farmRandomEnabled = true
-        StartLoop("FarmRandom", FarmRandomLogic, 0.5)
-        
-    else -- "none"
-        selectedFarmEnabled = false
-        autoFarmDungeonEnabled = false
-        farmRandomEnabled = false
-        StopLoop("FarmSelected")
-        StopLoop("FarmDungeon")
-        StopLoop("FarmRandom")
-    end
-end
-
 -- Auto farm logic (Vòng Lặp Mục Tiêu Tốc Độ Cao)
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
@@ -407,13 +326,13 @@ local function FarmDungeonLogic()
             originalPosition = nil
         end
         
-        -- Reset trạng thái dungeon
-        dungeonCompleted = false
+        -- Tạm dừng auto farm dungeon
+        StopLoop("FarmDungeon")
+        autoFarmDungeonEnabled = false
         
-        -- Nếu auto join dungeon được bật, tự động join lại
-        if autoJoinDungeonEnabled then
-            task.wait(3) -- Chờ một lúc trước khi join lại
-            JoinDungeon(selectedDungeonMode)
+        -- Cập nhật UI
+        if dungeonToggleFrame then
+            UpdateToggleButton(dungeonToggleFrame, false)
         end
     end
 end
@@ -496,27 +415,6 @@ end
 local function AutoStatLogic()
     if autoStatEnabled then
         DistributeStat(selectedStat)
-    end
-end
-
--- NEW: Auto Rank Up logic
-local function AutoRankUpLogic()
-    if autoRankUpEnabled then
-        local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-        if remote then
-            SafeFire(remote, "Rank Up")
-        end
-    end
-end
-
--- NEW: Auto M1 Click logic
-local function AutoM1ClickLogic()
-    if autoM1ClickEnabled then
-        local mouse = LocalPlayer:GetMouse()
-        local screenCenter = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y / 2)
-        
-        -- Simulate click at screen center
-        mouse1click(screenCenter.X, screenCenter.Y)
     end
 end
 
@@ -680,8 +578,6 @@ local function SaveConfig()
         selectedStat = selectedStat,
         autoOpenEggEnabled = autoOpenEggEnabled,
         autoStatEnabled = autoStatEnabled,
-        autoRankUpEnabled = autoRankUpEnabled,
-        autoM1ClickEnabled = autoM1ClickEnabled,
         stealthMode = stealthMode,
         
         -- Dungeon settings
@@ -718,8 +614,6 @@ local function LoadConfig(profileName)
         selectedStat = data.selectedStat or "Mastery"
         autoOpenEggEnabled = data.autoOpenEggEnabled or false
         autoStatEnabled = data.autoStatEnabled or false
-        autoRankUpEnabled = data.autoRankUpEnabled or false
-        autoM1ClickEnabled = data.autoM1ClickEnabled or false
         stealthMode = data.stealthMode or true
         
         -- Dungeon settings
@@ -769,8 +663,6 @@ local function CreateNewProfile(profileName)
             selectedStat = "Mastery",
             autoOpenEggEnabled = false,
             autoStatEnabled = false,
-            autoRankUpEnabled = false,
-            autoM1ClickEnabled = false,
             stealthMode = true,
             selectedDungeonMode = "Easy",
             autoFarmDungeonEnabled = false,
@@ -815,13 +707,13 @@ HimonoMini.Enabled = false
 HimonoMini.Parent = game.CoreGui
 
 local MiniButton = Instance.new("TextButton")
-MiniButton.Size = UDim2.new(0, 60, 0, 60)
-MiniButton.Position = UDim2.new(1, -70, 0, 20)
+MiniButton.Size = UDim2.new(0, 50, 0, 50)
+MiniButton.Position = UDim2.new(1, -60, 0, 20)
 MiniButton.BackgroundColor3 = ColorTheme.Accent
 MiniButton.Text = "⚡"
 MiniButton.TextColor3 = ColorTheme.Text
 MiniButton.Font = Enum.Font.GothamBold
-MiniButton.TextSize = 24
+MiniButton.TextSize = 20
 MiniButton.Parent = HimonoMini
 
 local MiniCorner = Instance.new("UICorner")
@@ -830,7 +722,7 @@ MiniCorner.Parent = MiniButton
 
 local MiniStroke = Instance.new("UIStroke")
 MiniStroke.Color = Color3.fromRGB(100, 150, 255)
-MiniStroke.Thickness = 3
+MiniStroke.Thickness = 2
 MiniStroke.Parent = MiniButton
 
 -- Hover effect cho mini button
@@ -859,8 +751,8 @@ end)
 
 -- Tạo Main Container với theme dark
 local MainContainer = Instance.new("Frame")
-MainContainer.Size = UDim2.new(0, 700, 0, 650)
-MainContainer.Position = UDim2.new(0.5, -350, 0.5, -325)
+MainContainer.Size = UDim2.new(0, 650, 0, 600)
+MainContainer.Position = UDim2.new(0.5, -325, 0.5, -300)
 MainContainer.BackgroundColor3 = ColorTheme.Background
 MainContainer.BorderSizePixel = 0
 MainContainer.Parent = HimonoHub
@@ -871,12 +763,12 @@ ContainerCorner.Parent = MainContainer
 
 local ContainerStroke = Instance.new("UIStroke")
 ContainerStroke.Color = Color3.fromRGB(40, 40, 50)
-ContainerStroke.Thickness = 3
+ContainerStroke.Thickness = 2
 ContainerStroke.Parent = MainContainer
 
 -- Title Bar
 local TitleBar = Instance.new("Frame")
-TitleBar.Size = UDim2.new(1, 0, 0, 60)
+TitleBar.Size = UDim2.new(1, 0, 0, 50)
 TitleBar.BackgroundColor3 = ColorTheme.Secondary
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainContainer
@@ -886,20 +778,20 @@ TitleCorner.CornerRadius = UDim.new(0.03, 0)
 TitleCorner.Parent = TitleBar
 
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -120, 1, 0)
+Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "⚡ HIMONO HUB v4.4 - DARK EDITION"
+Title.Text = "⚡ HIMONO HUB v4.3 - DARK EDITION"
 Title.TextColor3 = ColorTheme.Text
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 18
+Title.TextSize = 16
 Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Position = UDim2.new(0, 20, 0, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
 Title.Parent = TitleBar
 
 -- Stealth Indicator
 local StealthIndicator = Instance.new("Frame")
-StealthIndicator.Size = UDim2.new(0, 14, 0, 14)
-StealthIndicator.Position = UDim2.new(1, -100, 0.5, -7)
+StealthIndicator.Size = UDim2.new(0, 12, 0, 12)
+StealthIndicator.Position = UDim2.new(1, -90, 0.5, -6)
 StealthIndicator.BackgroundColor3 = stealthMode and ColorTheme.Success or ColorTheme.Danger
 StealthIndicator.Parent = TitleBar
 
@@ -913,20 +805,20 @@ StealthLabel.Position = UDim2.new(1, -80, 0, 0)
 StealthLabel.BackgroundTransparency = 1
 StealthLabel.Text = stealthMode and "STEALTH: ON" or "STEALTH: OFF"
 StealthLabel.TextColor3 = stealthMode and ColorTheme.Success or ColorTheme.Danger
-StealthLabel.Font = Enum.Font.GothamBold
-StealthLabel.TextSize = 11
+StealthLabel.Font = Enum.Font.Gotham
+StealthLabel.TextSize = 10
 StealthLabel.Parent = TitleBar
 
 -- Hide Button
 local HideButton = Instance.new("TextButton")
 HideButton.Name = "HideButton"
-HideButton.Size = UDim2.new(0, 35, 0, 35)
-HideButton.Position = UDim2.new(1, -45, 0.5, -17.5)
+HideButton.Size = UDim2.new(0, 30, 0, 30)
+HideButton.Position = UDim2.new(1, -35, 0.5, -15)
 HideButton.BackgroundColor3 = ColorTheme.Accent
 HideButton.Text = "─"
 HideButton.TextColor3 = ColorTheme.Text
 HideButton.Font = Enum.Font.GothamBold
-HideButton.TextSize = 18
+HideButton.TextSize = 16
 HideButton.Parent = TitleBar
 
 local HideCorner = Instance.new("UICorner")
@@ -939,23 +831,23 @@ end)
 
 -- Tab Container
 local TabContainer = Instance.new("ScrollingFrame")
-TabContainer.Size = UDim2.new(1, -20, 0, 45)
-TabContainer.Position = UDim2.new(0, 10, 0, 70)
+TabContainer.Size = UDim2.new(1, -20, 0, 40)
+TabContainer.Position = UDim2.new(0, 10, 0, 60)
 TabContainer.BackgroundTransparency = 1
-TabContainer.ScrollBarThickness = 4
+TabContainer.ScrollBarThickness = 3
 TabContainer.ScrollBarImageColor3 = ColorTheme.Accent
 TabContainer.CanvasSize = UDim2.new(2, 0, 0, 0)
 TabContainer.Parent = MainContainer
 
 local TabListLayout = Instance.new("UIListLayout")
 TabListLayout.FillDirection = Enum.FillDirection.Horizontal
-TabListLayout.Padding = UDim.new(0, 10)
+TabListLayout.Padding = UDim.new(0, 8)
 TabListLayout.Parent = TabContainer
 
 -- Content Container
 local ContentContainer = Instance.new("Frame")
-ContentContainer.Size = UDim2.new(1, -20, 1, -135)
-ContentContainer.Position = UDim2.new(0, 10, 0, 125)
+ContentContainer.Size = UDim2.new(1, -20, 1, -120)
+ContentContainer.Position = UDim2.new(0, 10, 0, 110)
 ContentContainer.BackgroundColor3 = ColorTheme.Secondary
 ContentContainer.Parent = MainContainer
 
@@ -966,7 +858,7 @@ ContentCorner.Parent = ContentContainer
 local ContentScroll = Instance.new("ScrollingFrame")
 ContentScroll.Size = UDim2.new(1, 0, 1, 0)
 ContentScroll.BackgroundTransparency = 1
-ContentScroll.ScrollBarThickness = 6
+ContentScroll.ScrollBarThickness = 5
 ContentScroll.ScrollBarImageColor3 = ColorTheme.Accent
 ContentScroll.CanvasSize = UDim2.new(0, 0, 2, 0)
 ContentScroll.Parent = ContentContainer
@@ -984,34 +876,29 @@ local tabFrames, tabButtons = {}, {}
 
 for i, tabName in pairs(tabs) do
     local tabButton = Instance.new("TextButton")
-    tabButton.Size = UDim2.new(0, 130, 1, 0)
+    tabButton.Size = UDim2.new(0, 120, 1, 0)
     tabButton.BackgroundColor3 = i == 1 and ColorTheme.Accent or Color3.fromRGB(40, 40, 50)
     tabButton.Text = tabName
     tabButton.TextColor3 = ColorTheme.Text
     tabButton.Font = Enum.Font.GothamBold
-    tabButton.TextSize = 13
+    tabButton.TextSize = 12
     tabButton.Parent = TabContainer
 
     local tabButtonCorner = Instance.new("UICorner")
     tabButtonCorner.CornerRadius = UDim.new(0.1, 0)
     tabButtonCorner.Parent = tabButton
 
-    local tabButtonStroke = Instance.new("UIStroke")
-    tabButtonStroke.Color = Color3.fromRGB(60, 60, 80)
-    tabButtonStroke.Thickness = 1
-    tabButtonStroke.Parent = tabButton
-
     local contentFrame = Instance.new("ScrollingFrame")
     contentFrame.Size = UDim2.new(1, 0, 1, 0)
     contentFrame.BackgroundTransparency = 1
-    contentFrame.ScrollBarThickness = 6
+    contentFrame.ScrollBarThickness = 5
     contentFrame.ScrollBarImageColor3 = ColorTheme.Accent
     contentFrame.CanvasSize = UDim2.new(0, 0, 2, 0)
     contentFrame.Visible = i == 1
     contentFrame.Parent = ContentScroll
 
     local contentFrameLayout = Instance.new("UIListLayout")
-    contentFrameLayout.Padding = UDim.new(0, 12)
+    contentFrameLayout.Padding = UDim.new(0, 10)
     contentFrameLayout.Parent = contentFrame
 
     tabFrames[tabName] = contentFrame
@@ -1038,22 +925,17 @@ end
 
 function CreateToggleSwitch(text, description, default, callback)
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 70)
+    frame.Size = UDim2.new(1, 0, 0, 60)
     frame.BackgroundTransparency = 1
 
     local bg = Instance.new("Frame")
-    bg.Size = UDim2.new(1, 0, 0, 60)
+    bg.Size = UDim2.new(1, 0, 0, 50)
     bg.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
     bg.Parent = frame
 
     local bgCorner = Instance.new("UICorner")
     bgCorner.CornerRadius = UDim.new(0.1, 0)
     bgCorner.Parent = bg
-
-    local bgStroke = Instance.new("UIStroke")
-    bgStroke.Color = Color3.fromRGB(50, 50, 60)
-    bgStroke.Thickness = 1
-    bgStroke.Parent = bg
 
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(0.7, 0, 0.5, 0)
@@ -1078,8 +960,8 @@ function CreateToggleSwitch(text, description, default, callback)
     desc.Parent = frame
 
     local toggle = Instance.new("TextButton")
-    toggle.Size = UDim2.new(0, 60, 0, 30)
-    toggle.Position = UDim2.new(1, -75, 0.5, -15)
+    toggle.Size = UDim2.new(0, 50, 0, 26)
+    toggle.Position = UDim2.new(1, -65, 0.5, -13)
     toggle.BackgroundColor3 = default and ColorTheme.Success or ColorTheme.Danger
     toggle.Text = default and "ON" or "OFF"
     toggle.TextColor3 = ColorTheme.Text
@@ -1091,11 +973,6 @@ function CreateToggleSwitch(text, description, default, callback)
     toggleCorner.CornerRadius = UDim.new(0.5, 0)
     toggleCorner.Parent = toggle
 
-    local toggleStroke = Instance.new("UIStroke")
-    toggleStroke.Color = Color3.fromRGB(60, 60, 80)
-    toggleStroke.Thickness = 1
-    toggleStroke.Parent = toggle
-
     local toggled = default
     toggle.MouseButton1Click:Connect(function()
         toggled = not toggled
@@ -1103,27 +980,18 @@ function CreateToggleSwitch(text, description, default, callback)
         if callback then callback(toggled) end
     end)
 
-    -- Hover effect
-    SafeConnect(toggle.MouseEnter, function()
-        TweenService:Create(toggle, TweenInfo.new(0.2), {BackgroundColor3 = toggled and Color3.fromRGB(0, 255, 140) or Color3.fromRGB(255, 100, 100)}):Play()
-    end)
-
-    SafeConnect(toggle.MouseLeave, function()
-        TweenService:Create(toggle, TweenInfo.new(0.2), {BackgroundColor3 = toggled and ColorTheme.Success or ColorTheme.Danger}):Play()
-    end)
-
     return frame
 end
 
-function CreateActionButton(text, description, callback, color)
+function CreateActionButton(text, description, callback)
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 70)
+    frame.Size = UDim2.new(1, 0, 0, 60)
     frame.BackgroundTransparency = 1
 
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.5, 0, 0, 45)
-    btn.Position = UDim2.new(0, 10, 0, 12)
-    btn.BackgroundColor3 = color or ColorTheme.Accent
+    btn.Size = UDim2.new(0.5, 0, 0, 40)
+    btn.Position = UDim2.new(0, 10, 0, 10)
+    btn.BackgroundColor3 = ColorTheme.Accent
     btn.Text = text
     btn.TextColor3 = ColorTheme.Text
     btn.Font = Enum.Font.GothamBold
@@ -1135,17 +1003,13 @@ function CreateActionButton(text, description, callback, color)
     btnCorner.Parent = btn
 
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = color and Color3.fromRGB(
-        math.min(255, color.R * 255 + 40),
-        math.min(255, color.G * 255 + 40),
-        math.min(255, color.B * 255 + 40)
-    ) or Color3.fromRGB(100, 150, 255)
-    btnStroke.Thickness = 2
+    btnStroke.Color = Color3.fromRGB(100, 150, 255)
+    btnStroke.Thickness = 1
     btnStroke.Parent = btn
 
     local desc = Instance.new("TextLabel")
     desc.Size = UDim2.new(0.5, 0, 0, 20)
-    desc.Position = UDim2.new(0.5, 20, 0, 25)
+    desc.Position = UDim2.new(0.5, 20, 0, 20)
     desc.BackgroundTransparency = 1
     desc.Text = description
     desc.TextColor3 = ColorTheme.TextSecondary
@@ -1156,15 +1020,11 @@ function CreateActionButton(text, description, callback, color)
 
     -- Hover effect
     SafeConnect(btn.MouseEnter, function()
-        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = color and Color3.fromRGB(
-            math.min(255, color.R * 255 + 30),
-            math.min(255, color.G * 255 + 30),
-            math.min(255, color.B * 255 + 30)
-        ) or ColorTheme.AccentHover}):Play()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = ColorTheme.AccentHover}):Play()
     end)
 
     SafeConnect(btn.MouseLeave, function()
-        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = color or ColorTheme.Accent}):Play()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = ColorTheme.Accent}):Play()
     end)
 
     btn.MouseButton1Click:Connect(function()
@@ -1176,22 +1036,17 @@ end
 
 function CreateComboBox(text, description, items, callback)
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 75)
+    frame.Size = UDim2.new(1, 0, 0, 70)
     frame.BackgroundTransparency = 1
 
     local bg = Instance.new("Frame")
-    bg.Size = UDim2.new(1, 0, 0, 65)
+    bg.Size = UDim2.new(1, 0, 0, 60)
     bg.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
     bg.Parent = frame
 
     local bgCorner = Instance.new("UICorner")
     bgCorner.CornerRadius = UDim.new(0.1, 0)
     bgCorner.Parent = bg
-
-    local bgStroke = Instance.new("UIStroke")
-    bgStroke.Color = Color3.fromRGB(50, 50, 60)
-    bgStroke.Thickness = 1
-    bgStroke.Parent = bg
 
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(0.5, 0, 0.5, 0)
@@ -1216,7 +1071,7 @@ function CreateComboBox(text, description, items, callback)
     desc.Parent = frame
 
     local dropdown = Instance.new("TextButton")
-    dropdown.Size = UDim2.new(0.4, 0, 0, 40)
+    dropdown.Size = UDim2.new(0.4, 0, 0, 35)
     dropdown.Position = UDim2.new(0.55, 0, 0.2, 0)
     dropdown.BackgroundColor3 = ColorTheme.Accent
     dropdown.Text = items[1] or "Select"
@@ -1228,11 +1083,6 @@ function CreateComboBox(text, description, items, callback)
     local btnCorner = Instance.new("UICorner")
     btnCorner.CornerRadius = UDim.new(0.1, 0)
     btnCorner.Parent = dropdown
-
-    local btnStroke = Instance.new("UIStroke")
-    btnStroke.Color = Color3.fromRGB(100, 150, 255)
-    btnStroke.Thickness = 1
-    btnStroke.Parent = dropdown
 
     local selected = items[1]
     local menu = nil
@@ -1251,7 +1101,7 @@ function CreateComboBox(text, description, items, callback)
         end
         
         menu = Instance.new("Frame")
-        menu.Size = UDim2.new(0.4, 0, 0, #items * 40)
+        menu.Size = UDim2.new(0.4, 0, 0, #items * 35)
         menu.Position = UDim2.new(0.55, 0, 0.8, 0)
         menu.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
         menu.Parent = frame
@@ -1262,13 +1112,13 @@ function CreateComboBox(text, description, items, callback)
         
         local menuStroke = Instance.new("UIStroke")
         menuStroke.Color = ColorTheme.Accent
-        menuStroke.Thickness = 2
+        menuStroke.Thickness = 1
         menuStroke.Parent = menu
         
         for i, item in ipairs(items) do
             local itemBtn = Instance.new("TextButton")
-            itemBtn.Size = UDim2.new(1, 0, 0, 40)
-            itemBtn.Position = UDim2.new(0, 0, 0, (i-1)*40)
+            itemBtn.Size = UDim2.new(1, 0, 0, 35)
+            itemBtn.Position = UDim2.new(0, 0, 0, (i-1)*35)
             itemBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
             itemBtn.Text = item
             itemBtn.TextColor3 = ColorTheme.Text
@@ -1329,29 +1179,6 @@ mainStatus.Parent = mainContent
 -- Biến lưu các toggle
 local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
 local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame
-local autoStatToggleFrame, autoRankUpToggleFrame, autoM1ClickToggleFrame
-
--- NEW: Auto Rank Up Toggle
-autoRankUpToggleFrame = CreateToggleSwitch("Auto Rank Up", "Tự động rank up khi đủ điều kiện", false, function(enabled)
-    autoRankUpEnabled = enabled
-    if enabled then 
-        StartLoop("AutoRankUp", AutoRankUpLogic, 5)
-    else
-        StopLoop("AutoRankUp")
-    end
-end)
-autoRankUpToggleFrame.Parent = mainContent
-
--- NEW: Auto M1 Click Toggle
-autoM1ClickToggleFrame = CreateToggleSwitch("Auto M1 Click", "Tự động click chuột trái vào giữa màn hình", false, function(enabled)
-    autoM1ClickEnabled = enabled
-    if enabled then 
-        StartLoop("AutoM1Click", AutoM1ClickLogic, 0.1)
-    else
-        StopLoop("AutoM1Click")
-    end
-end)
-autoM1ClickToggleFrame.Parent = mainContent
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
     autoAttackEnabled = enabled
@@ -1369,20 +1196,14 @@ autoDropsToggleFrame.Parent = mainContent
 local farmContent = tabFrames["🌾 FARM"]
 
 autoFarmSelectedToggleFrame = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên (SPEED: 0.1s)", false, function(enabled)
-    if enabled then
-        SetFarmState("selected")
-    else
-        SetFarmState("none")
-    end
+    selectedFarmEnabled = enabled
+    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) else StopLoop("FarmSelected") end 
 end)
 autoFarmSelectedToggleFrame.Parent = farmContent
 
 autoFarmRandomToggleFrame = CreateToggleSwitch("Enable Farm Random Enemies", "Tự động farm ngẫu nhiên", false, function(enabled)
-    if enabled then
-        SetFarmState("random")
-    else
-        SetFarmState("none")
-    end
+    farmRandomEnabled = enabled
+    if enabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) else StopLoop("FarmRandom") end
 end)
 autoFarmRandomToggleFrame.Parent = farmContent
 
@@ -1398,18 +1219,13 @@ local refreshGroupsBtn = CreateActionButton("Refresh Enemy Groups", "Quét và h
     for enemyName, group in pairs(enemyGroups) do
         local groupFrame = Instance.new("Frame")
         groupFrame.Name = "GroupFrame_" .. enemyName
-        groupFrame.Size = UDim2.new(1, 0, 0, 75)
+        groupFrame.Size = UDim2.new(1, 0, 0, 70)
         groupFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
         groupFrame.Parent = farmContent
 
         local cornerRadius = Instance.new("UICorner")
         cornerRadius.CornerRadius = UDim.new(0.1, 0)
         cornerRadius.Parent = groupFrame
-
-        local frameStroke = Instance.new("UIStroke")
-        frameStroke.Color = Color3.fromRGB(60, 60, 80)
-        frameStroke.Thickness = 1
-        frameStroke.Parent = groupFrame
 
         local nameLabel = Instance.new("TextLabel")
         nameLabel.Size = UDim2.new(0.6, 0, 0.5, 0)
@@ -1529,7 +1345,7 @@ local statCombo = CreateComboBox("Stat Type", "Chọn loại stat để cộng",
 end)
 statCombo.Parent = statsContent
 
-autoStatToggleFrame = CreateToggleSwitch("Enable Auto Stat", "Tự động cộng điểm stat đã chọn", false, function(enabled)
+local autoStatToggleFrame = CreateToggleSwitch("Enable Auto Stat", "Tự động cộng điểm stat đã chọn", false, function(enabled)
     autoStatEnabled = enabled
     if enabled then 
         StartLoop("AutoStat", AutoStatLogic, 1)
@@ -1609,10 +1425,12 @@ end)
 joinDungeonBtn.Parent = dungeonContent
 
 dungeonToggleFrame = CreateToggleSwitch("Enable Auto Farm Dungeon", "Tự động farm dungeon + tự về khi xong", false, function(enabled)
+    autoFarmDungeonEnabled = enabled
     if enabled then
-        SetFarmState("dungeon")
+        -- Join dungeon trước khi bắt đầu farm
+        JoinDungeon(selectedDungeonMode)
     else
-        SetFarmState("none")
+        StopLoop("FarmDungeon")
     end
 end)
 dungeonToggleFrame.Parent = dungeonContent
@@ -1656,7 +1474,7 @@ dungeonStatus.Parent = dungeonContent
 local configContent = tabFrames["💾 CONFIG"]
 
 local profileNameInput = Instance.new("TextBox")
-profileNameInput.Size = UDim2.new(0.6, 0, 0, 40)
+profileNameInput.Size = UDim2.new(0.6, 0, 0, 35)
 profileNameInput.Position = UDim2.new(0, 10, 0, 10)
 profileNameInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
 profileNameInput.TextColor3 = ColorTheme.Text
@@ -1670,11 +1488,6 @@ profileNameInput.Parent = configContent
 local inputCorner = Instance.new("UICorner")
 inputCorner.CornerRadius = UDim.new(0.1, 0)
 inputCorner.Parent = profileNameInput
-
-local inputStroke = Instance.new("UIStroke")
-inputStroke.Color = Color3.fromRGB(60, 60, 80)
-inputStroke.Thickness = 1
-inputStroke.Parent = profileNameInput
 
 local createProfileBtn = CreateActionButton("Create New Profile", "Tạo profile config mới", function()
     local profileName = profileNameInput.Text
@@ -1796,8 +1609,6 @@ local function ApplyLoadedConfig()
     UpdateToggleButton(autoOpenEggToggleFrame, autoOpenEggEnabled)
     UpdateToggleButton(dungeonToggleFrame, autoFarmDungeonEnabled)
     UpdateToggleButton(autoStatToggleFrame, autoStatEnabled)
-    UpdateToggleButton(autoRankUpToggleFrame, autoRankUpEnabled)
-    UpdateToggleButton(autoM1ClickToggleFrame, autoM1ClickEnabled)
     
     -- Cập nhật stealth indicator
     StealthIndicator.BackgroundColor3 = stealthMode and ColorTheme.Success or ColorTheme.Danger
@@ -1821,12 +1632,6 @@ local function ApplyLoadedConfig()
     end
     if autoStatEnabled then
         StartLoop("AutoStat", AutoStatLogic, 1)
-    end
-    if autoRankUpEnabled then
-        StartLoop("AutoRankUp", AutoRankUpLogic, 5)
-    end
-    if autoM1ClickEnabled then
-        StartLoop("AutoM1Click", AutoM1ClickLogic, 0.1)
     end
     if antiAFKEnabled then EnableAntiAFK() else DisableAntiAFK() end
     
@@ -1900,4 +1705,4 @@ else
     ApplyLoadedConfig()
 end
 
-print("⚡ HIMONO HUB v4.4 - DARK EDITION LOADED!")
+print("⚡ HIMONO HUB v4.3 - DARK EDITION LOADED!")
