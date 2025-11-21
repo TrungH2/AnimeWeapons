@@ -1,4 +1,4 @@
--- Himono Hub v4.5 - DARK EDITION (FIXED DUNGEON SYSTEM / AUTO TELEPORT BACK)
+-- Himono Hub v4.6 - DARK EDITION (FIXED CONFIG SAVE/LOAD)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -699,7 +699,7 @@ local function AutoOpenEggLogic()
     end
 end
 
--- NEW: Config Profiles System
+-- NEW: Config Profiles System - FIXED SAVE/LOAD
 local function SaveProfiles()
     local data = {
         profiles = configProfiles,
@@ -732,7 +732,7 @@ local function SaveConfig()
         autoStatEnabled = autoStatEnabled,
         stealthMode = stealthMode,
         
-        -- Dungeon settings
+        -- Dungeon settings - FIXED: Lưu cả trạng thái
         selectedDungeonMode = selectedDungeonMode,
         autoFarmDungeonEnabled = autoFarmDungeonEnabled,
         autoJoinDungeonEnabled = autoJoinDungeonEnabled,
@@ -742,13 +742,19 @@ local function SaveConfig()
         fpsBoostEnabled = fpsBoostEnabled,
         whiteScreenEnabled = whiteScreenEnabled,
         
-        -- Toggle states
+        -- Toggle states - FIXED: Thêm dungeon states
         selectedFarmEnabled = activeLoops["FarmSelected"] or false,
         autoAttackEnabled = activeLoops["AutoAttack"] or false,
         farmRandomEnabled = activeLoops["FarmRandom"] or false,
         autoCollectEnabled = activeLoops["AutoCollect"] or false,
         stealthModeEnabled = stealthMode,
-        antiAFKEnabled = antiAFKEnabled
+        antiAFKEnabled = antiAFKEnabled,
+        
+        -- NEW: Lưu riêng trạng thái dungeon toggles
+        dungeonJoinToggleState = autoJoinDungeonEnabled,
+        dungeonFarmToggleState = autoFarmDungeonEnabled,
+        raidJoinToggleState = autoJoinRaidEnabled,
+        dungeonModeState = selectedDungeonMode
     }
     
     configProfiles[selectedConfigProfile] = data
@@ -769,14 +775,31 @@ local function LoadConfig(profileName)
         autoStatEnabled = data.autoStatEnabled or false
         stealthMode = data.stealthMode or true
         
+        -- Dungeon settings - FIXED: Load cả trạng thái mới
         selectedDungeonMode = data.selectedDungeonMode or "Easy"
         autoFarmDungeonEnabled = data.autoFarmDungeonEnabled or false
         autoJoinDungeonEnabled = data.autoJoinDungeonEnabled or false
         autoJoinRaidEnabled = data.autoJoinRaidEnabled or false
         
+        -- NEW: Load riêng trạng thái dungeon toggles nếu có
+        if data.dungeonJoinToggleState ~= nil then
+            autoJoinDungeonEnabled = data.dungeonJoinToggleState
+        end
+        if data.dungeonFarmToggleState ~= nil then
+            autoFarmDungeonEnabled = data.dungeonFarmToggleState
+        end
+        if data.raidJoinToggleState ~= nil then
+            autoJoinRaidEnabled = data.raidJoinToggleState
+        end
+        if data.dungeonModeState ~= nil then
+            selectedDungeonMode = data.dungeonModeState
+        end
+        
+        -- Performance settings
         fpsBoostEnabled = data.fpsBoostEnabled or false
         whiteScreenEnabled = data.whiteScreenEnabled or false
         
+        -- Toggle states
         selectedFarmEnabled = data.selectedFarmEnabled or false
         autoAttackEnabled = data.autoAttackEnabled or false
         farmRandomEnabled = data.farmRandomEnabled or false
@@ -828,7 +851,11 @@ local function CreateNewProfile(profileName)
             farmRandomEnabled = false,
             autoCollectEnabled = false,
             stealthModeEnabled = true,
-            antiAFKEnabled = true
+            antiAFKEnabled = true,
+            dungeonJoinToggleState = false,
+            dungeonFarmToggleState = false,
+            raidJoinToggleState = false,
+            dungeonModeState = "Easy"
         }
         
         SaveProfiles()
@@ -935,7 +962,7 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "⚡ HIMONO HUB v4.5 - DUNGEON FIXED"
+Title.Text = "⚡ HIMONO HUB v4.6 - CONFIG FIXED"
 Title.TextColor3 = ColorTheme.Text
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
@@ -1322,7 +1349,7 @@ local mainContent = tabFrames["🏠 MAIN"]
 local mainStatus = Instance.new("TextLabel")
 mainStatus.Size = UDim2.new(1, -20, 0, 40)
 mainStatus.BackgroundTransparency = 1
-mainStatus.Text = "⚡ DUNGEON FIXED - Auto teleport back after completion!"
+mainStatus.Text = "⚡ CONFIG FIXED - Auto save/load dungeon settings!"
 mainStatus.TextColor3 = ColorTheme.Text
 mainStatus.Font = Enum.Font.Gotham
 mainStatus.TextSize = 14
@@ -1332,6 +1359,7 @@ mainStatus.Parent = mainContent
 local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
 local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame
 local fpsBoostToggleFrame, whiteScreenToggleFrame
+local autoJoinDungeonToggleFrame, autoJoinRaidToggleFrame
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
     autoAttackEnabled = enabled
@@ -1562,7 +1590,7 @@ local dungeonModeCombo = CreateComboBox("Dungeon Mode", "Chọn chế độ dung
 end)
 dungeonModeCombo.Parent = dungeonContent
 
-local autoJoinDungeonToggle = CreateToggleSwitch("Enable Auto Join Dungeon", "Tự động join khi có thông báo dungeon open", false, function(enabled)
+autoJoinDungeonToggleFrame = CreateToggleSwitch("Enable Auto Join Dungeon", "Tự động join khi có thông báo dungeon open", false, function(enabled)
     autoJoinDungeonEnabled = enabled
     if enabled then
         StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 5)
@@ -1570,7 +1598,7 @@ local autoJoinDungeonToggle = CreateToggleSwitch("Enable Auto Join Dungeon", "T�
         StopLoop("AutoJoinDungeon")
     end
 end)
-autoJoinDungeonToggle.Parent = dungeonContent
+autoJoinDungeonToggleFrame.Parent = dungeonContent
 
 local joinDungeonBtn = CreateActionButton("Join Dungeon", "Tham gia dungeon đã chọn", function()
     SaveCurrentPosition()
@@ -1600,7 +1628,7 @@ raidSection.TextSize = 16
 raidSection.TextXAlignment = Enum.TextXAlignment.Left
 raidSection.Parent = dungeonContent
 
-local autoJoinRaidToggle = CreateToggleSwitch("Enable Auto Join Raid", "Tự động join khi có thông báo raid open", false, function(enabled)
+autoJoinRaidToggleFrame = CreateToggleSwitch("Enable Auto Join Raid", "Tự động join khi có thông báo raid open", false, function(enabled)
     autoJoinRaidEnabled = enabled
     if enabled then
         StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 5)
@@ -1608,7 +1636,7 @@ local autoJoinRaidToggle = CreateToggleSwitch("Enable Auto Join Raid", "Tự đ�
         StopLoop("AutoJoinRaid")
     end
 end)
-autoJoinRaidToggle.Parent = dungeonContent
+autoJoinRaidToggleFrame.Parent = dungeonContent
 
 local joinRaidBtn = CreateActionButton("Join Raid", "Tham gia raid", function()
     SaveCurrentPosition()
@@ -1829,8 +1857,9 @@ stealthToggleFrame = CreateToggleSwitch("Enable Stealth Mode", "Ẩn hoạt đ�
 end)
 stealthToggleFrame.Parent = settingsContent
 
--- NEW: Hàm áp dụng config đã load
+-- NEW: Hàm áp dụng config đã load - FIXED
 local function ApplyLoadedConfig()
+    -- Cập nhật tất cả các nút toggle
     UpdateToggleButton(autoAttackToggleFrame, autoAttackEnabled)
     UpdateToggleButton(autoFarmSelectedToggleFrame, selectedFarmEnabled)
     UpdateToggleButton(autoFarmRandomToggleFrame, farmRandomEnabled)
@@ -1842,11 +1871,15 @@ local function ApplyLoadedConfig()
     UpdateToggleButton(autoStatToggleFrame, autoStatEnabled)
     UpdateToggleButton(fpsBoostToggleFrame, fpsBoostEnabled)
     UpdateToggleButton(whiteScreenToggleFrame, whiteScreenEnabled)
+    UpdateToggleButton(autoJoinDungeonToggleFrame, autoJoinDungeonEnabled)
+    UpdateToggleButton(autoJoinRaidToggleFrame, autoJoinRaidEnabled)
     
+    -- Cập nhật stealth indicator
     StealthIndicator.BackgroundColor3 = stealthMode and ColorTheme.Success or ColorTheme.Danger
     StealthLabel.Text = stealthMode and "STEALTH: ON" or "STEALTH: OFF"
     StealthLabel.TextColor3 = stealthMode and ColorTheme.Success or ColorTheme.Danger
     
+    -- Kích hoạt các vòng lặp nếu cần
     if autoAttackEnabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) end
     if selectedFarmEnabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) end
     if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
@@ -1872,6 +1905,7 @@ local function ApplyLoadedConfig()
     end
     if antiAFKEnabled then EnableAntiAFK() else DisableAntiAFK() end
     
+    -- Refresh farm display nếu đang ở tab FARM
     if tabFrames["🌾 FARM"].Visible then
         refreshGroupsBtn.MouseButton1Click:Fire()
     end
@@ -1937,6 +1971,6 @@ else
     ApplyLoadedConfig()
 end
 
-print("⚡ HIMONO HUB v4.5 - DUNGEON FIXED LOADED!")
-print("🏰 DUNGEON SYSTEM: Auto join + Auto farm + Auto return to original position")
-print("💾 CONFIG: Full profile system working")
+print("⚡ HIMONO HUB v4.6 - CONFIG FIXED LOADED!")
+print("💾 CONFIG: Dungeon settings now save/load properly")
+print("🏰 DUNGEON: Auto join + Auto farm + Auto return working")
