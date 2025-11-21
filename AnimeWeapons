@@ -32,6 +32,7 @@ local originalPosition = nil
 local fpsBoostEnabled = false
 local whiteScreenEnabled = false
 local originalGraphicsQuality = nil
+local whiteScreenGui = nil
 
 -- NEW: Biến config system
 local configProfiles = {}
@@ -45,12 +46,6 @@ local farmRandomEnabled = false
 local autoCollectEnabled = false
 local stealthModeEnabled = true
 local antiAFKEnabled = true
-
--- NEW: Biến smart farm system
-local smartFarmEnabled = false
-local originalFarmPosition = nil
-local isInDungeon = false
-local lastFarmState = nil
 
 -- Config file paths
 local configFolder = "HimonoHub/"
@@ -136,7 +131,7 @@ local function DisableAntiAFK()
     end
 end
 
--- NEW: Performance Functions
+-- NEW: Performance Functions - FIXED WHITE SCREEN
 local function EnableFPSBoost()
     if not originalGraphicsQuality then
         originalGraphicsQuality = settings().Rendering.QualityLevel
@@ -165,25 +160,30 @@ local function DisableFPSBoost()
 end
 
 local function EnableWhiteScreen()
-    local whiteScreen = Instance.new("SurfaceGui")
-    whiteScreen.Parent = game.CoreGui
-    whiteScreen.AlwaysOnTop = true
-    whiteScreen.Enabled = true
+    if whiteScreenGui then
+        whiteScreenGui:Destroy()
+    end
+    
+    whiteScreenGui = Instance.new("ScreenGui")
+    whiteScreenGui.Name = "WhiteScreen"
+    whiteScreenGui.ResetOnSpawn = false
+    whiteScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    whiteScreenGui.Parent = game.CoreGui
     
     local whiteFrame = Instance.new("Frame")
     whiteFrame.Size = UDim2.new(1, 0, 1, 0)
     whiteFrame.BackgroundColor3 = Color3.new(1, 1, 1)
     whiteFrame.BorderSizePixel = 0
-    whiteFrame.Parent = whiteScreen
+    whiteFrame.Parent = whiteScreenGui
     
-    -- Lưu reference để tắt sau
-    whiteScreenEnabled = whiteScreen
+    whiteScreenEnabled = whiteScreenGui
 end
 
 local function DisableWhiteScreen()
     if whiteScreenEnabled then
         whiteScreenEnabled:Destroy()
         whiteScreenEnabled = false
+        whiteScreenGui = nil
     end
 end
 
@@ -263,62 +263,6 @@ local function FindDungeonEnemies(range)
     return enemies
 end
 
--- NEW: Kiểm tra dungeon có sẵn không
-local function CheckDungeonAvailable()
-    -- Kiểm tra trong workspace
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Message") or (obj:IsA("Part") and obj.Name:lower():find("dungeon")) then
-            local messageText = obj.Text or obj.Name or ""
-            if messageText:lower():find("dungeon") and messageText:lower():find("open") then
-                return true
-            end
-        end
-    end
-    
-    -- Kiểm tra trong PlayerGui
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if playerGui then
-        for _, gui in pairs(playerGui:GetDescendants()) do
-            if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-                local text = gui.Text or ""
-                if text:lower():find("dungeon") and text:lower():find("open") then
-                    return true
-                end
-            end
-        end
-    end
-    
-    return false
-end
-
--- NEW: Kiểm tra raid có sẵn không
-local function CheckRaidAvailable()
-    -- Kiểm tra trong workspace
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Message") or (obj:IsA("Part") and obj.Name:lower():find("raid")) then
-            local messageText = obj.Text or obj.Name or ""
-            if messageText:lower():find("raid") and messageText:lower():find("open") then
-                return true
-            end
-        end
-    end
-    
-    -- Kiểm tra trong PlayerGui
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if playerGui then
-        for _, gui in pairs(playerGui:GetDescendants()) do
-            if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-                local text = gui.Text or ""
-                if text:lower():find("raid") and text:lower():find("open") then
-                    return true
-                end
-            end
-        end
-    end
-    
-    return false
-end
-
 -- Group enemies by name
 local function GetEnemyGroups()
     local enemies = FindEnemiesInRange(200)
@@ -395,99 +339,6 @@ local function FarmSelectedLogic()
     end
 end
 
--- NEW: Smart Farm Logic - COMBINE TẤT CẢ
-local function SmartFarmLogic()
-    while smartFarmEnabled do
-        -- KIỂM TRA DUNGEON/RAID TRƯỚC
-        local dungeonAvailable = CheckDungeonAvailable()
-        local raidAvailable = CheckRaidAvailable()
-        
-        if dungeonAvailable or raidAvailable then
-            -- LƯU TRẠNG THÁI HIỆN TẠI
-            if not isInDungeon then
-                lastFarmState = {
-                    selectedFarmEnabled = activeLoops["FarmSelected"] or false,
-                    position = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position
-                }
-                -- TẮT FARM MAP CHÍNH
-                StopLoop("FarmSelected")
-            end
-            
-            -- VÀO DUNGEON/RAID
-            if dungeonAvailable then
-                JoinDungeon(selectedDungeonMode)
-            else
-                JoinRaid()
-            end
-            
-            isInDungeon = true
-            
-            -- CHỜ VÀ FARM DUNGEON/RAID
-            task.wait(5) -- Chờ load map
-            
-            local dungeonCompleted = false
-            while smartFarmEnabled and isInDungeon and not dungeonCompleted do
-                local dungeonEnemies = FindDungeonEnemies(100)
-                
-                if #dungeonEnemies > 0 then
-                    -- FARM DUNGEON
-                    for _, enemy in ipairs(dungeonEnemies) do
-                        if not smartFarmEnabled then break end
-                        
-                        if enemy.Model and enemy.Model:FindFirstChild("Humanoid") and enemy.Model.Humanoid.Health > 0 then
-                            local character = LocalPlayer.Character
-                            if character and character:FindFirstChild("HumanoidRootPart") then
-                                local offset = Vector3.new(
-                                    math.random(-8, 8) / 10,
-                                    2,
-                                    math.random(-8, 8) / 10
-                                )
-                                character.HumanoidRootPart.CFrame = CFrame.new(enemy.Position + offset)
-                                
-                                local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-                                if remote then 
-                                    SafeFire(remote, "Attack", enemy.Model)
-                                    task.wait(0.05)
-                                    SafeFire(remote, "Attack", enemy.Model)
-                                end
-                            end
-                            task.wait(0.1)
-                        end
-                    end
-                else
-                    -- DUNGEON HOÀN THÀNH
-                    dungeonCompleted = true
-                    task.wait(2)
-                    
-                    -- QUAY LẠI VỊ TRÍ CŨ
-                    if lastFarmState and lastFarmState.position then
-                        local character = LocalPlayer.Character
-                        if character and character:FindFirstChild("HumanoidRootPart") then
-                            character.HumanoidRootPart.CFrame = CFrame.new(lastFarmState.position)
-                        end
-                    end
-                    
-                    isInDungeon = false
-                    
-                    -- BẬT LẠI FARM MAP CHÍNH
-                    if lastFarmState and lastFarmState.selectedFarmEnabled then
-                        task.wait(2)
-                        StartLoop("FarmSelected", FarmSelectedLogic, 0.1)
-                    end
-                end
-                task.wait(0.5)
-            end
-        else
-            -- KHÔNG CÓ DUNGEON/RAID, FARM BÌNH THƯỜNG
-            if not isInDungeon then
-                FarmSelectedLogic()
-            end
-        end
-        
-        task.wait(1) -- Kiểm tra mỗi giây
-    end
-end
-
 -- NEW: Auto farm dungeon logic
 local function FarmDungeonLogic()
     local character = LocalPlayer.Character
@@ -551,15 +402,75 @@ end
 
 -- NEW: Auto join dungeon logic
 local function AutoJoinDungeonLogic()
-    if autoJoinDungeonEnabled and CheckDungeonAvailable() then
-        JoinDungeon(selectedDungeonMode)
+    if autoJoinDungeonEnabled then
+        -- Kiểm tra xem có thông báo dungeon mở không
+        local foundDungeon = false
+        
+        -- Kiểm tra trong workspace
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("Message") or (obj:IsA("Part") and obj.Name:lower():find("dungeon")) then
+                local messageText = obj.Text or obj.Name or ""
+                if messageText:lower():find("dungeon") and messageText:lower():find("open") then
+                    foundDungeon = true
+                    break
+                end
+            end
+        end
+        
+        -- Kiểm tra trong PlayerGui
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            for _, gui in pairs(playerGui:GetDescendants()) do
+                if gui:IsA("TextLabel") or gui:IsA("TextButton") then
+                    local text = gui.Text or ""
+                    if text:lower():find("dungeon") and text:lower():find("open") then
+                        foundDungeon = true
+                        break
+                    end
+                end
+            end
+        end
+        
+        if foundDungeon then
+            JoinDungeon(selectedDungeonMode)
+        end
     end
 end
 
 -- NEW: Auto join raid logic
 local function AutoJoinRaidLogic()
-    if autoJoinRaidEnabled and CheckRaidAvailable() then
-        JoinRaid()
+    if autoJoinRaidEnabled then
+        -- Kiểm tra xem có thông báo raid mở không
+        local foundRaid = false
+        
+        -- Kiểm tra trong workspace
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("Message") or (obj:IsA("Part") and obj.Name:lower():find("raid")) then
+                local messageText = obj.Text or obj.Name or ""
+                if messageText:lower():find("raid") and messageText:lower():find("open") then
+                    foundRaid = true
+                    break
+                end
+            end
+        end
+        
+        -- Kiểm tra trong PlayerGui
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            for _, gui in pairs(playerGui:GetDescendants()) do
+                if gui:IsA("TextLabel") or gui:IsA("TextButton") then
+                    local text = gui.Text or ""
+                    if text:lower():find("raid") and text:lower():find("open") then
+                        foundRaid = true
+                        break
+                    end
+                end
+            end
+        end
+        
+        if foundRaid then
+            JoinRaid()
+        end
     end
 end
 
@@ -742,9 +653,6 @@ local function SaveConfig()
         fpsBoostEnabled = fpsBoostEnabled,
         whiteScreenEnabled = whiteScreenEnabled,
         
-        -- Smart farm settings
-        smartFarmEnabled = smartFarmEnabled,
-        
         -- Toggle states
         selectedFarmEnabled = activeLoops["FarmSelected"] or false,
         autoAttackEnabled = activeLoops["AutoAttack"] or false,
@@ -784,9 +692,6 @@ local function LoadConfig(profileName)
         -- Performance settings
         fpsBoostEnabled = data.fpsBoostEnabled or false
         whiteScreenEnabled = data.whiteScreenEnabled or false
-        
-        -- Smart farm settings
-        smartFarmEnabled = data.smartFarmEnabled or false
         
         -- Toggle states
         selectedFarmEnabled = data.selectedFarmEnabled or false
@@ -836,7 +741,6 @@ local function CreateNewProfile(profileName)
             autoJoinRaidEnabled = false,
             fpsBoostEnabled = false,
             whiteScreenEnabled = false,
-            smartFarmEnabled = false,
             selectedFarmEnabled = false,
             autoAttackEnabled = false,
             farmRandomEnabled = false,
@@ -1348,28 +1252,7 @@ mainStatus.Parent = mainContent
 -- Biến lưu các toggle
 local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
 local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame
-local smartFarmToggleFrame, fpsBoostToggleFrame, whiteScreenToggleFrame
-
--- SMART FARM TOGGLE (QUAN TRỌNG)
-smartFarmToggleFrame = CreateToggleSwitch("Enable SMART FARM", "Farm map + Auto join dungeon/raid + Auto return", false, function(enabled)
-    smartFarmEnabled = enabled
-    if enabled then
-        -- TẮT CÁC FARM KHÁC ĐỂ TRÁNH XUNG ĐỘT
-        StopLoop("FarmSelected")
-        StopLoop("AutoAttack")
-        StopLoop("FarmRandom")
-        StopLoop("FarmDungeon")
-        
-        -- BẬT SMART FARM
-        StartLoop("SmartFarm", SmartFarmLogic)
-        mainStatus.Text = "🚀 SMART FARM: Đã bật - Tự động farm + dungeon/raid"
-    else
-        StopLoop("SmartFarm")
-        isInDungeon = false
-        mainStatus.Text = "⚡ SMART FARM: Đã tắt"
-    end
-end)
-smartFarmToggleFrame.Parent = mainContent
+local fpsBoostToggleFrame, whiteScreenToggleFrame
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
     autoAttackEnabled = enabled
@@ -1708,7 +1591,7 @@ performanceInfo.TextXAlignment = Enum.TextXAlignment.Left
 performanceInfo.TextYAlignment = Enum.TextYAlignment.Top
 performanceInfo.Parent = performanceContent
 
--- CONFIG TAB
+-- CONFIG TAB - FIXED
 local configContent = tabFrames["💾 CONFIG"]
 
 local configSection = Instance.new("TextLabel")
@@ -1721,6 +1604,7 @@ configSection.TextSize = 16
 configSection.TextXAlignment = Enum.TextXAlignment.Left
 configSection.Parent = configContent
 
+-- Profile Name Input
 local profileNameInput = Instance.new("TextBox")
 profileNameInput.Size = UDim2.new(0.6, 0, 0, 35)
 profileNameInput.Position = UDim2.new(0, 10, 0, 40)
@@ -1737,33 +1621,7 @@ local inputCorner = Instance.new("UICorner")
 inputCorner.CornerRadius = UDim.new(0.1, 0)
 inputCorner.Parent = profileNameInput
 
--- Hàm cập nhật danh sách profile trong combo box
-local function UpdateProfileComboBox()
-    local profileNames = GetProfileNames()
-    
-    -- Tìm và cập nhật dropdown profile
-    for _, child in pairs(configContent:GetChildren()) do
-        if child:IsA("Frame") and child:FindFirstChildOfClass("TextLabel") then
-            local label = child:FindFirstChildOfClass("TextLabel")
-            if label and label.Text == "Select Profile" then
-                child:Destroy() -- Xóa combo cũ
-                break
-            end
-        end
-    end
-    
-    -- Tạo combo mới
-    local profileCombo = CreateComboBox("Select Profile", "Chọn profile để quản lý", GetProfileNames(), function(selected)
-        selectedConfigProfile = selected
-        -- TẢI LUÔN KHI CHỌN PROFILE
-        if LoadConfig(selectedConfigProfile) then
-            ApplyLoadedConfig()
-            mainStatus.Text = "📂 Đã tải profile: " .. selectedConfigProfile
-        end
-    end)
-    profileCombo.Parent = configContent
-end
-
+-- Create Profile Button
 local createProfileBtn = CreateActionButton("Create New Profile", "Tạo profile config mới", function()
     local profileName = profileNameInput.Text
     if profileName and profileName ~= "" then
@@ -1782,7 +1640,7 @@ local createProfileBtn = CreateActionButton("Create New Profile", "Tạo profile
 end)
 createProfileBtn.Parent = configContent
 
--- Tạo profile combo với danh sách profile hiện tại
+-- Profile Selection ComboBox
 local function GetProfileNames()
     local names = {"default"}
     for name, _ in pairs(configProfiles) do
@@ -1793,9 +1651,12 @@ local function GetProfileNames()
     return names
 end
 
--- Tạo profile combo ban đầu
-UpdateProfileComboBox()
+local profileCombo = CreateComboBox("Select Profile", "Chọn profile để quản lý", GetProfileNames(), function(selected)
+    selectedConfigProfile = selected
+end)
+profileCombo.Parent = configContent
 
+-- Config Action Buttons
 local loadProfileBtn = CreateActionButton("Load Profile", "Tải cấu hình từ profile", function()
     if LoadConfig(selectedConfigProfile) then
         ApplyLoadedConfig()
@@ -1838,6 +1699,28 @@ local autoLoadBtn = CreateActionButton("Set as Auto Load", "Tự động load pr
 end)
 autoLoadBtn.Parent = configContent
 
+-- Hàm cập nhật danh sách profile trong combo box
+local function UpdateProfileComboBox()
+    local profileNames = GetProfileNames()
+    
+    -- Tìm và cập nhật dropdown profile
+    for _, child in pairs(configContent:GetChildren()) do
+        if child:IsA("Frame") and child:FindFirstChildOfClass("TextLabel") then
+            local label = child:FindFirstChildOfClass("TextLabel")
+            if label and label.Text == "Select Profile" then
+                child:Destroy() -- Xóa combo cũ
+                break
+            end
+        end
+    end
+    
+    -- Tạo combo mới
+    local newProfileCombo = CreateComboBox("Select Profile", "Chọn profile để quản lý", GetProfileNames(), function(selected)
+        selectedConfigProfile = selected
+    end)
+    newProfileCombo.Parent = configContent
+end
+
 local configInfo = Instance.new("TextLabel")
 configInfo.Size = UDim2.new(1, -20, 0, 80)
 configInfo.BackgroundTransparency = 1
@@ -1878,7 +1761,6 @@ local function ApplyLoadedConfig()
     UpdateToggleButton(autoOpenEggToggleFrame, autoOpenEggEnabled)
     UpdateToggleButton(dungeonToggleFrame, autoFarmDungeonEnabled)
     UpdateToggleButton(autoStatToggleFrame, autoStatEnabled)
-    UpdateToggleButton(smartFarmToggleFrame, smartFarmEnabled)
     UpdateToggleButton(fpsBoostToggleFrame, fpsBoostEnabled)
     UpdateToggleButton(whiteScreenToggleFrame, whiteScreenEnabled)
     
@@ -1904,9 +1786,6 @@ local function ApplyLoadedConfig()
     end
     if autoStatEnabled then
         StartLoop("AutoStat", AutoStatLogic, 1)
-    end
-    if smartFarmEnabled then
-        StartLoop("SmartFarm", SmartFarmLogic)
     end
     if fpsBoostEnabled then
         EnableFPSBoost()
@@ -1983,6 +1862,5 @@ else
 end
 
 print("⚡ HIMONO HUB v4.4 - DARK EDITION LOADED!")
-print("🚀 SMART FARM: Farm map + Auto Dungeon/Raid + Auto Return")
-print("💾 CONFIG SYSTEM: Multiple profiles + Auto load")
-print("🚀 PERFORMANCE: FPS Boost + White Screen")
+print("🚀 PERFORMANCE: FPS Boost + White Screen (FIXED)")
+print("💾 CONFIG: Full profile system working")
