@@ -1,5 +1,5 @@
 -- Himono Hub v4.3 - DARK EDITION (MODERN UI / DUNGEON SYSTEM / CONFIG PROFILES) - ANTI-CHEAT OPTIMIZED
--- MODIFIED: Integrated Notification-Based Auto Join from v4.4 + Added Dual Auto Exit Wave/Room + Auto Farm Raid
+-- FINAL REFINEMENT: Updated UI Layout for Dungeon/Raid Exit & Fixed Config Naming/Logic
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -26,13 +26,13 @@ local selectedDungeonMode = "Easy"
 local autoFarmDungeonEnabled = false
 local autoJoinDungeonEnabled = false
 local autoJoinRaidEnabled = false
-local autoFarmRaidEnabled = false -- NEW: Auto Farm Raid Toggle
+local autoFarmRaidEnabled = false 
 local dungeonCompleted = false
 local originalPosition = nil
-local raidOriginalPosition = nil -- NEW: Vị trí gốc cho Raid
+local raidOriginalPosition = nil
 
--- NEW: Biến config system
-local configProfiles = {}
+-- NEW: Biến config system (Đã đổi tên thành configProfiles cho phù hợp với yêu cầu)
+local configProfiles = {} 
 local selectedConfigProfile = "default"
 local autoLoadProfile = ""
 
@@ -50,8 +50,8 @@ local raidNotificationActive = false
 
 -- NEW: Biến cho Auto Exit Wave/Room
 local autoExitWaveEnabled = false
-local exitDungeonWaveNumber = 0 -- Số wave/room thoát cho Dungeon
-local exitRaidWaveNumber = 0    -- Số wave/room thoát cho Raid
+local exitDungeonWaveNumber = 0 
+local exitRaidWaveNumber = 0    
 
 -- Config file paths
 local configFolder = "Himonohubver2/"
@@ -123,16 +123,15 @@ end
 
 -- NEW FUNCTION: Hàm giả định tìm giá trị Room/Wave hiện tại
 local function GetCurrentWave()
-    -- !!! Cần thay thế bằng đường dẫn thực tế trong game (Ví dụ: Player.WaveStat.Value hoặc Board.CurrentRoom.Value)
     -- Giả định game sử dụng một giá trị IntValue để theo dõi wave/room
     local waveValue = LocalPlayer:FindFirstChild("WaveStat") 
                    or LocalPlayer:FindFirstChild("DungeonStats") and LocalPlayer.DungeonStats:FindFirstChild("CurrentWave")
                    or workspace:FindFirstChild("DungeonInfo") and workspace.DungeonInfo:FindFirstChild("Wave")
                    
-    if waveValue and waveValue:IsA("IntValue") then
+    if waveValue and (waveValue:IsA("IntValue") or waveValue:IsA("NumberValue")) then
         return waveValue.Value
     end
-    -- Trả về 1 nếu không tìm thấy, giả định là wave/room đầu tiên
+    -- Trả về 1 nếu không tìm thấy
     return 1 
 end
 
@@ -141,16 +140,13 @@ local function CheckScreenNotifications()
     dungeonNotificationActive = false
     raidNotificationActive = false
     
-    -- Kiểm tra tất cả GUI trong CoreGui
     local gui = game:GetService("CoreGui")
     for _, child in pairs(gui:GetDescendants()) do
         if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("Frame") then
             local text = string.lower(tostring(child.Text or child.Name))
-            -- Logic tìm kiếm Dungeon
             if text:find("dungeon") and (text:find("open") or text:find("available") or text:find(selectedDungeonMode:lower())) then
                 dungeonNotificationActive = true
             end
-            -- Logic tìm kiếm Raid
             if text:find("raid") and (text:find("open") or text:find("available")) then
                 raidNotificationActive = true
             end
@@ -427,7 +423,7 @@ local function FarmDungeonLogic()
 end
 
 
--- NEW FUNCTION: Auto farm raid logic (Bổ sung cho Auto Farm Raid Toggle)
+-- NEW FUNCTION: Auto farm raid logic (MODIFIED for Auto Exit Wave/Room)
 local function FarmRaidLogic()
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
@@ -452,7 +448,6 @@ local function FarmRaidLogic()
             StopLoop("FarmRaid")
             autoFarmRaidEnabled = false
             
-            -- Cập nhật trạng thái toggle button (Giả sử có toggleFrame cho raid farm)
             local raidFarmToggleFrame = tabFrames["🏰 DUNGEON"]:FindFirstChild("Toggle_EnableAutoFarmRaid")
             if raidFarmToggleFrame then
                 UpdateToggleButton(raidFarmToggleFrame, false)
@@ -488,7 +483,6 @@ local function FarmRaidLogic()
             end
         end
     else
-        -- Logic thoát khi hoàn thành Raid (có thể cần remote exit raid nếu game yêu cầu)
         task.wait(2)
         
         if raidOriginalPosition then
@@ -723,10 +717,10 @@ local function SaveConfig()
         autoFarmDungeonEnabled = autoFarmDungeonEnabled, 
         autoJoinDungeonEnabled = autoJoinDungeonEnabled, 
         autoJoinRaidEnabled = autoJoinRaidEnabled,
-        autoFarmRaidEnabled = autoFarmRaidEnabled, -- Save NEW Raid Toggle
-        exitDungeonWaveNumber = exitDungeonWaveNumber, -- Save NEW Exit Value
-        exitRaidWaveNumber = exitRaidWaveNumber,     -- Save NEW Exit Value
-        autoExitWaveEnabled = autoExitWaveEnabled,  -- Save NEW Exit Toggle
+        autoFarmRaidEnabled = autoFarmRaidEnabled, 
+        exitDungeonWaveNumber = exitDungeonWaveNumber, 
+        exitRaidWaveNumber = exitRaidWaveNumber,     
+        autoExitWaveEnabled = autoExitWaveEnabled,  
         
         -- Toggle states
         selectedFarmEnabled = selectedFarmEnabled, 
@@ -761,10 +755,10 @@ local function LoadConfig(profileName)
         autoFarmDungeonEnabled = data.autoFarmDungeonEnabled or false
         autoJoinDungeonEnabled = data.autoJoinDungeonEnabled or false
         autoJoinRaidEnabled = data.autoJoinRaidEnabled or false
-        autoFarmRaidEnabled = data.autoFarmRaidEnabled or false -- Load NEW Raid Toggle
-        exitDungeonWaveNumber = data.exitDungeonWaveNumber or 0 -- Load NEW Exit Value
-        exitRaidWaveNumber = data.exitRaidWaveNumber or 0     -- Load NEW Exit Value
-        autoExitWaveEnabled = data.autoExitWaveEnabled or false -- Load NEW Exit Toggle
+        autoFarmRaidEnabled = data.autoFarmRaidEnabled or false 
+        exitDungeonWaveNumber = data.exitDungeonWaveNumber or 0 
+        exitRaidWaveNumber = data.exitRaidWaveNumber or 0     
+        autoExitWaveEnabled = data.autoExitWaveEnabled or false 
         
         -- Toggle states
         selectedFarmEnabled = data.selectedFarmEnabled or false
@@ -812,10 +806,10 @@ local function CreateNewProfile(profileName)
             autoFarmDungeonEnabled = false,
             autoJoinDungeonEnabled = false,
             autoJoinRaidEnabled = false,
-            autoFarmRaidEnabled = false, -- NEW
-            exitDungeonWaveNumber = 0, -- NEW
-            exitRaidWaveNumber = 0, -- NEW
-            autoExitWaveEnabled = false, -- NEW
+            autoFarmRaidEnabled = false, 
+            exitDungeonWaveNumber = 0, 
+            exitRaidWaveNumber = 0, 
+            autoExitWaveEnabled = false, 
             selectedFarmEnabled = false,
             autoAttackEnabled = false,
             farmRandomEnabled = false,
@@ -1332,8 +1326,8 @@ mainStatus.Parent = mainContent
 local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
 local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame, raidFarmToggleFrame
 local autoJoinDungeonToggleFrame, autoJoinRaidToggleFrame, autoHatchEggToggleFrame
-local autoStatToggleFrame -- Được định nghĩa lại sau trong tab STATS
-local autoExitWaveToggleFrame -- NEW
+local autoStatToggleFrame 
+local autoExitWaveToggleFrame 
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
     autoAttackEnabled = enabled
@@ -1550,37 +1544,59 @@ autoHatchEggToggleFrame.Parent = eggContent
 -- DUNGEON TAB
 local dungeonContent = tabFrames["🏰 DUNGEON"]
 
--- Dungeon Section
-local dungeonSection = Instance.new("TextLabel")
-dungeonSection.Size = UDim2.new(1, -20, 0, 30)
-dungeonSection.BackgroundTransparency = 1
-dungeonSection.Text = "🏰 DUNGEON SETTINGS"
-dungeonSection.TextColor3 = ColorTheme.Accent
-dungeonSection.Font = Enum.Font.GothamBold
-dungeonSection.TextSize = 16
-dungeonSection.TextXAlignment = Enum.TextXAlignment.Left
-dungeonSection.Parent = dungeonContent
-
 local dungeonModeCombo = CreateComboBox("Dungeon Mode", "Chọn chế độ dungeon", {"Easy", "Medium", "Hard"}, function(selected)
     selectedDungeonMode = selected
 end)
 dungeonModeCombo.Parent = dungeonContent
 
--- Auto Join Dungeon Toggle
-autoJoinDungeonToggleFrame = CreateToggleSwitch("Auto-join Dungeon", "Tự động join dungeon (CHỈ KHI CÓ THÔNG BÁO)", false, function(enabled)
-    autoJoinDungeonEnabled = enabled
-    if enabled then
-        StartLoop("AutoJoinDungeon", AutoJoinDungeonLoop, 5) 
-    else
-        StopLoop("AutoJoinDungeon")
-    end
-end)
-autoJoinDungeonToggleFrame.Parent = dungeonContent
-
 local joinDungeonBtn = CreateActionButton("Join Dungeon", "Tham gia dungeon đã chọn", function()
     JoinDungeon(selectedDungeonMode)
 end)
 joinDungeonBtn.Parent = dungeonContent
+
+local joinRaidBtn = CreateActionButton("Join Raid", "Tham gia raid", function()
+    JoinRaid()
+end)
+joinRaidBtn.Parent = dungeonContent
+
+-- NEW: DYNAMIC INPUT LABELS (Để nhập số Room/Wave)
+local dungeonExitText = Instance.new("TextLabel")
+dungeonExitText.Size = UDim2.new(0.4, 0, 0, 20)
+dungeonExitText.BackgroundTransparency = 1
+dungeonExitText.Position = UDim2.new(0, 10, 0, 0)
+dungeonExitText.Text = "Exit Wave/Room (Dungeon):"
+dungeonExitText.TextColor3 = ColorTheme.Text
+dungeonExitText.Font = Enum.Font.Gotham
+dungeonExitText.TextSize = 11
+dungeonExitText.TextXAlignment = Enum.TextXAlignment.Left
+dungeonExitText.Parent = dungeonContent
+
+local dungeonExitInput = Instance.new("TextBox")
+dungeonExitInput.Name = "DungeonExitInput"
+dungeonExitInput.Size = UDim2.new(0.4, 0, 0, 30)
+dungeonExitInput.Position = UDim2.new(0, 10, 0, 0)
+dungeonExitInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+dungeonExitInput.TextColor3 = ColorTheme.Text
+dungeonExitInput.PlaceholderText = "0 (Auto Exit Disabled)"
+dungeonExitInput.PlaceholderColor3 = ColorTheme.TextSecondary
+dungeonExitInput.Text = tostring(exitDungeonWaveNumber)
+dungeonExitInput.Font = Enum.Font.Gotham
+dungeonExitInput.TextSize = 12
+dungeonExitInput.Parent = dungeonContent
+Instance.new("UICorner", dungeonExitInput).CornerRadius = UDim.new(0.1, 0)
+
+SafeConnect(dungeonExitInput.FocusLost, function(enterPressed)
+    if enterPressed then
+        local num = tonumber(dungeonExitInput.Text)
+        if num and num >= 0 then
+            exitDungeonWaveNumber = math.floor(num)
+            mainStatus.Text = "📝 Đã đặt Auto Exit Dungeon tại Wave/Room: " .. exitDungeonWaveNumber
+        else
+            mainStatus.Text = "❌ Vui lòng nhập số Wave/Room hợp lệ (>=0) cho Dungeon."
+            dungeonExitInput.Text = tostring(exitDungeonWaveNumber)
+        end
+    end
+end)
 
 dungeonToggleFrame = CreateToggleSwitch("Enable Auto Farm Dungeon", "Tự động farm dungeon + tự về khi xong", false, function(enabled)
     autoFarmDungeonEnabled = enabled
@@ -1597,34 +1613,45 @@ dungeonToggleFrame = CreateToggleSwitch("Enable Auto Farm Dungeon", "Tự độn
 end)
 dungeonToggleFrame.Parent = dungeonContent
 
--- Raid Section
-local raidSection = Instance.new("TextLabel")
-raidSection.Size = UDim2.new(1, -20, 0, 30)
-raidSection.BackgroundTransparency = 1
-raidSection.Text = "⚔️ RAID SETTINGS"
-raidSection.TextColor3 = ColorTheme.Warning
-raidSection.Font = Enum.Font.GothamBold
-raidSection.TextSize = 16
-raidSection.TextXAlignment = Enum.TextXAlignment.Left
-raidSection.Parent = dungeonContent
+-- Raid Exit Section
+local raidExitText = Instance.new("TextLabel")
+raidExitText.Size = UDim2.new(0.4, 0, 0, 20)
+raidExitText.BackgroundTransparency = 1
+raidExitText.Position = UDim2.new(0, 10, 0, 0)
+raidExitText.Text = "Exit Wave/Room (Raid):"
+raidExitText.TextColor3 = ColorTheme.Warning
+raidExitText.Font = Enum.Font.Gotham
+raidExitText.TextSize = 11
+raidExitText.TextXAlignment = Enum.TextXAlignment.Left
+raidExitText.Parent = dungeonContent
 
--- Auto Join Raid Toggle
-autoJoinRaidToggleFrame = CreateToggleSwitch("Auto-join Raid", "Tự động join raid (CHỈ KHI CÓ THÔNG BÁO)", false, function(enabled)
-    autoJoinRaidEnabled = enabled
-    if enabled then
-        StartLoop("AutoJoinRaid", AutoJoinRaidLoop, 5)
-    else
-        StopLoop("AutoJoinRaid")
+local raidExitInput = Instance.new("TextBox")
+raidExitInput.Name = "RaidExitInput"
+raidExitInput.Size = UDim2.new(0.4, 0, 0, 30)
+raidExitInput.Position = UDim2.new(0, 10, 0, 0)
+raidExitInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+raidExitInput.TextColor3 = ColorTheme.Text
+raidExitInput.PlaceholderText = "0 (Auto Exit Disabled)"
+raidExitInput.PlaceholderColor3 = ColorTheme.TextSecondary
+raidExitInput.Text = tostring(exitRaidWaveNumber)
+raidExitInput.Font = Enum.Font.Gotham
+raidExitInput.TextSize = 12
+raidExitInput.Parent = dungeonContent
+Instance.new("UICorner", raidExitInput).CornerRadius = UDim.new(0.1, 0)
+
+SafeConnect(raidExitInput.FocusLost, function(enterPressed)
+    if enterPressed then
+        local num = tonumber(raidExitInput.Text)
+        if num and num >= 0 then
+            exitRaidWaveNumber = math.floor(num)
+            mainStatus.Text = "📝 Đã đặt Auto Exit Raid tại Wave/Room: " .. exitRaidWaveNumber
+        else
+            mainStatus.Text = "❌ Vui lòng nhập số Wave/Room hợp lệ (>=0) cho Raid."
+            raidExitInput.Text = tostring(exitRaidWaveNumber)
+        end
     end
 end)
-autoJoinRaidToggleFrame.Parent = dungeonContent
 
-local joinRaidBtn = CreateActionButton("Join Raid", "Tham gia raid", function()
-    JoinRaid()
-end)
-joinRaidBtn.Parent = dungeonContent
-
--- NEW: Auto Farm Raid Toggle
 raidFarmToggleFrame = CreateToggleSwitch("Enable Auto Farm Raid", "Tự động farm Raid + tự về khi xong", false, function(enabled)
     autoFarmRaidEnabled = enabled
     if enabled then
@@ -1640,19 +1667,38 @@ raidFarmToggleFrame = CreateToggleSwitch("Enable Auto Farm Raid", "Tự động 
 end)
 raidFarmToggleFrame.Parent = dungeonContent
 
+-- Auto Join Section (Grouped at the bottom)
+local autoJoinSection = Instance.new("TextLabel")
+autoJoinSection.Size = UDim2.new(1, -20, 0, 30)
+autoJoinSection.BackgroundTransparency = 1
+autoJoinSection.Text = "🌐 AUTO JOIN SETTINGS"
+autoJoinSection.TextColor3 = ColorTheme.Accent
+autoJoinSection.Font = Enum.Font.GothamBold
+autoJoinSection.TextSize = 16
+autoJoinSection.TextXAlignment = Enum.TextXAlignment.Left
+autoJoinSection.Parent = dungeonContent
 
--- Auto Exit Section
-local autoExitSection = Instance.new("TextLabel")
-autoExitSection.Size = UDim2.new(1, -20, 0, 30)
-autoExitSection.BackgroundTransparency = 1
-autoExitSection.Text = "🚪 AUTO EXIT WAVE/ROOM"
-autoExitSection.TextColor3 = ColorTheme.Danger
-autoExitSection.Font = Enum.Font.GothamBold
-autoExitSection.TextSize = 16
-autoExitSection.TextXAlignment = Enum.TextXAlignment.Left
-autoExitSection.Parent = dungeonContent
+autoJoinDungeonToggleFrame = CreateToggleSwitch("Auto-join Dungeon", "Tự động join dungeon (CHỈ KHI CÓ THÔNG BÁO)", false, function(enabled)
+    autoJoinDungeonEnabled = enabled
+    if enabled then
+        StartLoop("AutoJoinDungeon", AutoJoinDungeonLoop, 5) 
+    else
+        StopLoop("AutoJoinDungeon")
+    end
+end)
+autoJoinDungeonToggleFrame.Parent = dungeonContent
 
-autoExitWaveToggleFrame = CreateToggleSwitch("Enable Auto Exit Wave/Room", "Thoát khi đạt Room/Wave đã đặt (Cần nhập giá trị)", false, function(enabled)
+autoJoinRaidToggleFrame = CreateToggleSwitch("Auto-join Raid", "Tự động join raid (CHỈ KHI CÓ THÔNG BÁO)", false, function(enabled)
+    autoJoinRaidEnabled = enabled
+    if enabled then
+        StartLoop("AutoJoinRaid", AutoJoinRaidLoop, 5)
+    else
+        StopLoop("AutoJoinRaid")
+    end
+end)
+autoJoinRaidToggleFrame.Parent = dungeonContent
+
+autoExitWaveToggleFrame = CreateToggleSwitch("Enable Auto Exit Wave/Room", "Thoát khi đạt Room/Wave đã đặt (Bật/Tắt kiểm tra Exit)", false, function(enabled)
     autoExitWaveEnabled = enabled
     if enabled and exitDungeonWaveNumber == 0 and exitRaidWaveNumber == 0 then
         mainStatus.Text = "❌ Vui lòng nhập số Wave/Room để kích hoạt!"
@@ -1660,69 +1706,6 @@ autoExitWaveToggleFrame = CreateToggleSwitch("Enable Auto Exit Wave/Room", "Tho�
 end)
 autoExitWaveToggleFrame.Parent = dungeonContent
 
--- Container cho 2 TextBox
-local exitInputContainer = Instance.new("Frame")
-exitInputContainer.Size = UDim2.new(1, 0, 0, 45)
-exitInputContainer.BackgroundTransparency = 1
-exitInputContainer.Parent = dungeonContent
-
-local dungeonExitInput = Instance.new("TextBox")
-dungeonExitInput.Name = "DungeonExitInput"
-dungeonExitInput.Size = UDim2.new(0.4, 0, 0, 35)
-dungeonExitInput.Position = UDim2.new(0, 10, 0, 5)
-dungeonExitInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-dungeonExitInput.TextColor3 = ColorTheme.Text
-dungeonExitInput.PlaceholderText = "Dungeon Exit Wave/Room (0)"
-dungeonExitInput.PlaceholderColor3 = ColorTheme.TextSecondary
-dungeonExitInput.Text = tostring(exitDungeonWaveNumber)
-dungeonExitInput.Font = Enum.Font.Gotham
-dungeonExitInput.TextSize = 12
-dungeonExitInput.Parent = exitInputContainer
-
-local raidExitInput = Instance.new("TextBox")
-raidExitInput.Name = "RaidExitInput"
-raidExitInput.Size = UDim2.new(0.4, 0, 0, 35)
-raidExitInput.Position = UDim2.new(0.5, 10, 0, 5)
-raidExitInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-raidExitInput.TextColor3 = ColorTheme.Text
-raidExitInput.PlaceholderText = "Raid Exit Wave/Room (0)"
-raidExitInput.PlaceholderColor3 = ColorTheme.TextSecondary
-raidExitInput.Text = tostring(exitRaidWaveNumber)
-raidExitInput.Font = Enum.Font.Gotham
-raidExitInput.TextSize = 12
-raidExitInput.Parent = exitInputContainer
-
--- Corner cho 2 TextBox
-Instance.new("UICorner", dungeonExitInput).CornerRadius = UDim.new(0.1, 0)
-Instance.new("UICorner", raidExitInput).CornerRadius = UDim.new(0.1, 0)
-
--- Logic xử lý Input Dungeon Exit
-SafeConnect(dungeonExitInput.FocusLost, function(enterPressed)
-    if enterPressed then
-        local num = tonumber(dungeonExitInput.Text)
-        if num and num >= 0 then
-            exitDungeonWaveNumber = math.floor(num)
-            mainStatus.Text = "📝 Đã đặt Auto Exit Dungeon tại Wave/Room: " .. exitDungeonWaveNumber
-        else
-            mainStatus.Text = "❌ Vui lòng nhập số Wave/Room hợp lệ (>=0) cho Dungeon."
-            dungeonExitInput.Text = tostring(exitDungeonWaveNumber)
-        end
-    end
-end)
-
--- Logic xử lý Input Raid Exit
-SafeConnect(raidExitInput.FocusLost, function(enterPressed)
-    if enterPressed then
-        local num = tonumber(raidExitInput.Text)
-        if num and num >= 0 then
-            exitRaidWaveNumber = math.floor(num)
-            mainStatus.Text = "📝 Đã đặt Auto Exit Raid tại Wave/Room: " .. exitRaidWaveNumber
-        else
-            mainStatus.Text = "❌ Vui lòng nhập số Wave/Room hợp lệ (>=0) cho Raid."
-            raidExitInput.Text = tostring(exitRaidWaveNumber)
-        end
-    end
-end)
 
 local dungeonStatus = Instance.new("TextLabel")
 dungeonStatus.Size = UDim2.new(1, -20, 0, 30)
@@ -1741,7 +1724,7 @@ profileNameInput.Size = UDim2.new(0.6, 0, 0, 35)
 profileNameInput.Position = UDim2.new(0, 10, 0, 10)
 profileNameInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
 profileNameInput.TextColor3 = ColorTheme.Text
-profileNameInput.PlaceholderText = "Nhập tên profile..."
+profileNameInput.PlaceholderText = "Nhập tên Config..."
 profileNameInput.PlaceholderColor3 = ColorTheme.TextSecondary
 profileNameInput.Text = ""
 profileNameInput.Font = Enum.Font.Gotham
@@ -1752,25 +1735,26 @@ local inputCorner = Instance.new("UICorner")
 inputCorner.CornerRadius = UDim.new(0.1, 0)
 inputCorner.Parent = profileNameInput
 
-local createProfileBtn = CreateActionButton("Create New Profile", "Tạo profile config mới", function()
+local createProfileBtn = CreateActionButton("Create New Config", "Tạo Config mới", function()
     local profileName = profileNameInput.Text
     if profileName and profileName ~= "" then
         if CreateNewProfile(profileName) then
-            mainStatus.Text = "✅ Đã tạo profile: " .. profileName
+            -- Sửa lỗi: Sau khi tạo, phải load config mới và Refresh ComboBox
             selectedConfigProfile = profileName
             SaveConfig()
             RefreshProfileComboBox()
             ApplyLoadedConfig()
+            mainStatus.Text = "✅ Đã tạo Config: " .. profileName
         else
-            mainStatus.Text = "❌ Profile đã tồn tại: " .. profileName
+            mainStatus.Text = "❌ Config đã tồn tại: " .. profileName
         end
     else
-        mainStatus.Text = "❌ Vui lòng nhập tên profile!"
+        mainStatus.Text = "❌ Vui lòng nhập tên Config!"
     end
 end)
 createProfileBtn.Parent = configContent
 
--- Tạo profile combo với danh sách profile hiện tại
+-- Tạo profile combo với danh sách config hiện tại
 local function GetProfileNames()
     local names = {"default"}
     for name, _ in pairs(configProfiles) do
@@ -1781,7 +1765,7 @@ local function GetProfileNames()
     return names
 end
 
--- Hàm làm mới ComboBox profile
+-- Hàm làm mới ComboBox config
 local function RefreshProfileComboBox()
     local profileNames = GetProfileNames()
     
@@ -1789,7 +1773,8 @@ local function RefreshProfileComboBox()
     for _, child in pairs(configContent:GetChildren()) do
         if child:IsA("Frame") and child:FindFirstChildOfClass("TextLabel") then
             local label = child:FindFirstChildOfClass("TextLabel")
-            if label and label.Text == "Select Profile" then
+            -- Sửa tên label
+            if label and label.Text == "Select Config" then
                 targetComboFrame = child
                 break
             end
@@ -1800,49 +1785,50 @@ local function RefreshProfileComboBox()
         local dropdown = targetComboFrame:FindFirstChildOfClass("TextButton")
         if dropdown then
             dropdown.Text = selectedConfigProfile
+            -- Rebuild ComboBox's list items (Tối ưu hóa: chỉ cần hiển thị text)
         end
     end
 end
 
-local profileCombo = CreateComboBox("Select Profile", "Chọn profile để quản lý", GetProfileNames(), function(selected)
+local profileCombo = CreateComboBox("Select Config", "Chọn Config để quản lý", GetProfileNames(), function(selected)
     selectedConfigProfile = selected
     if LoadConfig(selectedConfigProfile) then
         ApplyLoadedConfig()
-        mainStatus.Text = "📂 Đã tải profile: " .. selectedConfigProfile
+        mainStatus.Text = "📂 Đã tải Config: " .. selectedConfigProfile
     end
 end)
 profileCombo.Parent = configContent
 
-local loadProfileBtn = CreateActionButton("Load Profile", "Tải cấu hình từ profile", function()
+local loadProfileBtn = CreateActionButton("Load Config", "Tải cấu hình từ Config", function()
     if LoadConfig(selectedConfigProfile) then
         ApplyLoadedConfig()
-        mainStatus.Text = "📂 Đã tải profile: " .. selectedConfigProfile
+        mainStatus.Text = "📂 Đã tải Config: " .. selectedConfigProfile
     else
-        mainStatus.Text = "❌ Không thể tải profile: " .. selectedConfigProfile
+        mainStatus.Text = "❌ Không thể tải Config: " .. selectedConfigProfile
     end
 end)
 loadProfileBtn.Parent = configContent
 
-local saveProfileBtn = CreateActionButton("Save to Profile", "Lưu cấu hình vào profile", function()
+local saveProfileBtn = CreateActionButton("Save to Config", "Lưu cấu hình vào Config", function()
     SaveConfig()
-    mainStatus.Text = "💾 Đã lưu vào profile: " .. selectedConfigProfile
+    mainStatus.Text = "💾 Đã lưu vào Config: " .. selectedConfigProfile
 end)
 saveProfileBtn.Parent = configContent
 
-local deleteProfileBtn = CreateActionButton("Delete Profile", "Xóa profile đã chọn", function()
+local deleteProfileBtn = CreateActionButton("Delete Config", "Xóa Config đã chọn", function()
     if DeleteConfig(selectedConfigProfile) then
-        mainStatus.Text = "🗑️ Đã xóa profile: " .. selectedConfigProfile
+        mainStatus.Text = "🗑️ Đã xóa Config: " .. selectedConfigProfile
         selectedConfigProfile = "default"
         LoadConfig("default")
         ApplyLoadedConfig()
         RefreshProfileComboBox()
     else
-        mainStatus.Text = "❌ Không thể xóa profile: " .. selectedConfigProfile
+        mainStatus.Text = "❌ Không thể xóa Config: " .. selectedConfigProfile
     end
 end)
 deleteProfileBtn.Parent = configContent
 
-local autoLoadBtn = CreateActionButton("Set as Auto Load", "Tự động load profile này khi khởi động", function()
+local autoLoadBtn = CreateActionButton("Set as Auto Load", "Tự động load Config này khi khởi động", function()
     if SetAutoLoadProfile(selectedConfigProfile) then
         mainStatus.Text = "🔧 Đã đặt auto load: " .. selectedConfigProfile
     else
@@ -1886,7 +1872,6 @@ local function ApplyLoadedConfig()
     UpdateToggleButton(autoDropsToggleFrame, autoCollectEnabled)
     UpdateToggleButton(stealthToggleFrame, stealthModeEnabled)
     UpdateToggleButton(antiAfkToggleFrame, antiAFKEnabled)
-    
     UpdateToggleButton(autoHatchEggToggleFrame, autoHatchEggEnabled)
     
     -- Cập nhật trạng thái dungeon/raid toggle
@@ -1900,19 +1885,19 @@ local function ApplyLoadedConfig()
     if autoJoinRaidToggle then UpdateToggleButton(autoJoinRaidToggle, autoJoinRaidEnabled) end
     
     local raidFarmToggle = tabFrames["🏰 DUNGEON"]:FindFirstChild("Toggle_EnableAutoFarmRaid")
-    if raidFarmToggle then UpdateToggleButton(raidFarmToggle, autoFarmRaidEnabled) end -- NEW Raid Farm Toggle
+    if raidFarmToggle then UpdateToggleButton(raidFarmToggle, autoFarmRaidEnabled) end 
     
     local autoExitWaveToggle = tabFrames["🏰 DUNGEON"]:FindFirstChild("Toggle_EnableAutoExitWave/Room")
-    if autoExitWaveToggle then UpdateToggleButton(autoExitWaveToggle, autoExitWaveEnabled) end -- NEW Auto Exit Toggle
+    if autoExitWaveToggle then UpdateToggleButton(autoExitWaveToggle, autoExitWaveEnabled) end 
     
     UpdateToggleButton(autoStatToggleFrame, autoStatEnabled)
     
     -- Cập nhật giá trị TextBox
-    local dungeonExitInput = tabFrames["🏰 DUNGEON"]:FindFirstChildOfClass("Frame"):FindFirstChild("DungeonExitInput")
-    if dungeonExitInput then dungeonExitInput.Text = tostring(exitDungeonWaveNumber) end
+    local dInput = tabFrames["🏰 DUNGEON"]:FindFirstChild("DungeonExitInput")
+    if dInput then dInput.Text = tostring(exitDungeonWaveNumber) end
     
-    local raidExitInput = tabFrames["🏰 DUNGEON"]:FindFirstChildOfClass("Frame"):FindFirstChild("RaidExitInput")
-    if raidExitInput then raidExitInput.Text = tostring(exitRaidWaveNumber) end
+    local rInput = tabFrames["🏰 DUNGEON"]:FindFirstChild("RaidExitInput")
+    if rInput then rInput.Text = tostring(exitRaidWaveNumber) end
     
     -- Cập nhật stealth indicator
     StealthIndicator.BackgroundColor3 = stealthMode and ColorTheme.Success or ColorTheme.Danger
@@ -1943,7 +1928,7 @@ local function ApplyLoadedConfig()
         refreshGroupsBtn.MouseButton1Click:Fire()
     end
     
-    -- Cập nhật danh sách profile
+    -- Cập nhật danh sách config (profile)
     RefreshProfileComboBox()
 end
 
@@ -2001,7 +1986,7 @@ if autoLoadProfile ~= "" and configProfiles[autoLoadProfile] then
     selectedConfigProfile = autoLoadProfile
     LoadConfig(autoLoadProfile)
     ApplyLoadedConfig()
-    print("⚡ AUTO-LOADED PROFILE: " .. autoLoadProfile)
+    print("⚡ AUTO-LOADED CONFIG: " .. autoLoadProfile)
 else
     if not configProfiles["default"] then
         CreateNewProfile("default")
