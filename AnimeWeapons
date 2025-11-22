@@ -1,5 +1,5 @@
 -- Himono Hub v4.3 - DARK EDITION (MODERN UI / DUNGEON SYSTEM / CONFIG PROFILES) - ANTI-CHEAT OPTIMIZED
--- MODIFIED: Integrated Notification-Based Auto Join from v4.4
+-- MODIFIED: Integrated Notification-Based Auto Join from v4.4 + Added Dual Auto Exit Wave/Room + Auto Farm Raid
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -26,8 +26,10 @@ local selectedDungeonMode = "Easy"
 local autoFarmDungeonEnabled = false
 local autoJoinDungeonEnabled = false
 local autoJoinRaidEnabled = false
+local autoFarmRaidEnabled = false -- NEW: Auto Farm Raid Toggle
 local dungeonCompleted = false
 local originalPosition = nil
+local raidOriginalPosition = nil -- NEW: Vị trí gốc cho Raid
 
 -- NEW: Biến config system
 local configProfiles = {}
@@ -45,6 +47,11 @@ local antiAFKEnabled = true
 -- NEW: Biến theo dõi thông báo (TỪ V4.4)
 local dungeonNotificationActive = false
 local raidNotificationActive = false
+
+-- NEW: Biến cho Auto Exit Wave/Room
+local autoExitWaveEnabled = false
+local exitDungeonWaveNumber = 0 -- Số wave/room thoát cho Dungeon
+local exitRaidWaveNumber = 0    -- Số wave/room thoát cho Raid
 
 -- Config file paths
 local configFolder = "Himonohubver2/"
@@ -114,6 +121,21 @@ local function StopLoop(name)
     if activeLoops[name] then activeLoops[name] = false end
 end
 
+-- NEW FUNCTION: Hàm giả định tìm giá trị Room/Wave hiện tại
+local function GetCurrentWave()
+    -- !!! Cần thay thế bằng đường dẫn thực tế trong game (Ví dụ: Player.WaveStat.Value hoặc Board.CurrentRoom.Value)
+    -- Giả định game sử dụng một giá trị IntValue để theo dõi wave/room
+    local waveValue = LocalPlayer:FindFirstChild("WaveStat") 
+                   or LocalPlayer:FindFirstChild("DungeonStats") and LocalPlayer.DungeonStats:FindFirstChild("CurrentWave")
+                   or workspace:FindFirstChild("DungeonInfo") and workspace.DungeonInfo:FindFirstChild("Wave")
+                   
+    if waveValue and waveValue:IsA("IntValue") then
+        return waveValue.Value
+    end
+    -- Trả về 1 nếu không tìm thấy, giả định là wave/room đầu tiên
+    return 1 
+end
+
 -- NEW: Hàm kiểm tra thông báo trên màn hình (TỪ V4.4)
 local function CheckScreenNotifications()
     dungeonNotificationActive = false
@@ -139,12 +161,11 @@ end
 -- NEW: Auto Join Dungeon Logic (Notification-Based từ V4.4)
 local function AutoJoinDungeonLoop()
     if autoJoinDungeonEnabled then
-        CheckScreenNotifications() -- Kiểm tra thông báo trước khi join
+        CheckScreenNotifications()
         
         if dungeonNotificationActive then
             pcall(function()
                 JoinDungeon(selectedDungeonMode)
-                -- Tắt cờ tạm thời để tránh spam ngay lập tức
                 dungeonNotificationActive = false
             end)
         end
@@ -154,12 +175,11 @@ end
 -- NEW: Auto Join Raid Logic (Notification-Based từ V4.4)
 local function AutoJoinRaidLoop()
     if autoJoinRaidEnabled then
-        CheckScreenNotifications() -- Kiểm tra thông báo trước khi join
+        CheckScreenNotifications()
         
         if raidNotificationActive then
             pcall(function()
                 JoinRaid()
-                -- Tắt cờ tạm thời để tránh spam ngay lập tức
                 raidNotificationActive = false
             end)
         end
@@ -315,7 +335,6 @@ local function FarmSelectedLogic()
                 3,
                 random:NextInteger(-15, 15) / 10
             )
-            -- Thêm SafeWait để giảm tính "robot" của Teleport
             SafeWait() 
             character.HumanoidRootPart.CFrame = CFrame.new(target.Position + offset)
             
@@ -330,7 +349,7 @@ local function FarmSelectedLogic()
     end
 end
 
--- Auto farm dungeon logic
+-- Auto farm dungeon logic (MODIFIED for Auto Exit Wave/Room)
 local function FarmDungeonLogic()
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
@@ -339,6 +358,30 @@ local function FarmDungeonLogic()
         originalPosition = character.HumanoidRootPart.Position
     end
     
+    -- NEW LOGIC: Kiểm tra điều kiện thoát theo Wave/Room
+    if autoExitWaveEnabled and exitDungeonWaveNumber > 0 then
+        local currentWave = GetCurrentWave()
+        
+        if currentWave >= exitDungeonWaveNumber then
+            dungeonCompleted = true
+            task.wait(2)
+            
+            -- Thực hiện thoát và về vị trí cũ
+            if originalPosition then
+                character.HumanoidRootPart.CFrame = CFrame.new(originalPosition)
+                originalPosition = nil
+            end
+            
+            StopLoop("FarmDungeon")
+            autoFarmDungeonEnabled = false
+            if dungeonToggleFrame then
+                UpdateToggleButton(dungeonToggleFrame, false)
+            end
+            mainStatus.Text = "🚪 Dungeon: Đã thoát ở Wave/Room " .. currentWave .. " theo cài đặt!"
+            return 
+        end
+    end
+
     local enemies = FindDungeonEnemies(100)
     
     if #enemies > 0 then
@@ -351,8 +394,7 @@ local function FarmDungeonLogic()
                     2,
                     random:NextInteger(-12, 12) / 10
                 )
-                -- Thêm SafeWait để giảm tính "robot" của Teleport
-                SafeWait() 
+                SafeWait()
                 character.HumanoidRootPart.CFrame = CFrame.new(enemy.Position + offset)
                 
                 local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
@@ -377,12 +419,94 @@ local function FarmDungeonLogic()
         StopLoop("FarmDungeon")
         autoFarmDungeonEnabled = false
         
-        -- Cập nhật trạng thái toggle button
         if dungeonToggleFrame then
             UpdateToggleButton(dungeonToggleFrame, false)
         end
+        mainStatus.Text = "✅ Dungeon: Hoàn thành và tự động thoát!"
     end
 end
+
+
+-- NEW FUNCTION: Auto farm raid logic (Bổ sung cho Auto Farm Raid Toggle)
+local function FarmRaidLogic()
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    
+    if not raidOriginalPosition then
+        raidOriginalPosition = character.HumanoidRootPart.Position
+    end
+    
+    -- NEW LOGIC: Kiểm tra điều kiện thoát theo Wave/Room
+    if autoExitWaveEnabled and exitRaidWaveNumber > 0 then
+        local currentWave = GetCurrentWave()
+        
+        if currentWave >= exitRaidWaveNumber then
+            task.wait(2)
+            
+            -- Thực hiện thoát và về vị trí cũ
+            if raidOriginalPosition then
+                character.HumanoidRootPart.CFrame = CFrame.new(raidOriginalPosition)
+                raidOriginalPosition = nil
+            end
+            
+            StopLoop("FarmRaid")
+            autoFarmRaidEnabled = false
+            
+            -- Cập nhật trạng thái toggle button (Giả sử có toggleFrame cho raid farm)
+            local raidFarmToggleFrame = tabFrames["🏰 DUNGEON"]:FindFirstChild("Toggle_EnableAutoFarmRaid")
+            if raidFarmToggleFrame then
+                UpdateToggleButton(raidFarmToggleFrame, false)
+            end
+            mainStatus.Text = "🚪 Raid: Đã thoát ở Wave/Room " .. currentWave .. " theo cài đặt!"
+            return 
+        end
+    end
+
+    local enemies = FindDungeonEnemies(100) -- Dùng chung logic tìm enemy
+    
+    if #enemies > 0 then
+        for _, enemy in ipairs(enemies) do
+            if not activeLoops["FarmRaid"] then break end
+        
+            if enemy.Model and enemy.Model:FindFirstChild("Humanoid") and enemy.Model.Humanoid.Health > 0 then
+                local offset = Vector3.new(
+                    random:NextInteger(-12, 12) / 10,
+                    2,
+                    random:NextInteger(-12, 12) / 10
+                )
+                SafeWait()
+                character.HumanoidRootPart.CFrame = CFrame.new(enemy.Position + offset)
+                
+                local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
+                if remote then 
+                    SafeFire(remote, "Attack", enemy.Model)
+                    task.wait(0.05)
+                    SafeFire(remote, "Attack", enemy.Model)
+                end
+                
+                task.wait(0.1)
+            end
+        end
+    else
+        -- Logic thoát khi hoàn thành Raid (có thể cần remote exit raid nếu game yêu cầu)
+        task.wait(2)
+        
+        if raidOriginalPosition then
+            character.HumanoidRootPart.CFrame = CFrame.new(raidOriginalPosition)
+            raidOriginalPosition = nil
+        end
+        
+        StopLoop("FarmRaid")
+        autoFarmRaidEnabled = false
+        
+        local raidFarmToggleFrame = tabFrames["🏰 DUNGEON"]:FindFirstChild("Toggle_EnableAutoFarmRaid")
+        if raidFarmToggleFrame then
+            UpdateToggleButton(raidFarmToggleFrame, false)
+        end
+        mainStatus.Text = "✅ Raid: Hoàn thành và tự động thoát!"
+    end
+end
+
 
 -- NEW: Auto stat logic
 local function AutoStatLogic()
@@ -431,7 +555,7 @@ local function AutoAttackLogic()
                 2,
                 random:NextInteger(-8, 8) / 10
             )
-            SafeWait() -- Thêm SafeWait
+            SafeWait()
             character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + offset)
             local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
             if remote then SafeFire(remote, "Attack", nearestEnemy.Model) end
@@ -450,7 +574,7 @@ local function FarmRandomLogic()
                 2,
                 random:NextInteger(-8, 8) / 10
             )
-            SafeWait() -- Thêm SafeWait
+            SafeWait()
             character.HumanoidRootPart.CFrame = CFrame.new(randomEnemy.Position + offset)
             local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
             if remote then SafeFire(remote, "Attack", randomEnemy.Model) end
@@ -532,7 +656,12 @@ local function JoinRaid()
         SafeFire(remote, "Join Gamemode", {[1]=raidCode})
         
         dungeonCompleted = false
-        originalPosition = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position
+        raidOriginalPosition = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position
+        
+        if autoFarmRaidEnabled and not activeLoops["FarmRaid"] then
+            task.wait(3)
+            StartLoop("FarmRaid", FarmRaidLogic, 0.2)
+        end
     end
 end
 
@@ -579,7 +708,6 @@ local function LoadProfiles()
 end
 
 local function SaveConfig()
-    -- Lấy trạng thái hiện tại của các loop để lưu
     local data = {
         selectedEnemyNames = selectedEnemyNames,
         selectedGachaType = selectedGachaType,
@@ -592,12 +720,15 @@ local function SaveConfig()
         
         -- Dungeon settings
         selectedDungeonMode = selectedDungeonMode,
-        autoFarmDungeonEnabled = autoFarmDungeonEnabled, -- SỬ DỤNG BIẾN CHỦ ĐỂ LƯU
-        autoJoinDungeonEnabled = autoJoinDungeonEnabled, -- SỬ DỤNG BIẾN CHỦ ĐỂ LƯU
-        autoJoinRaidEnabled = autoJoinRaidEnabled, -- SỬ DỤNG BIẾN CHỦ ĐỂ LƯU
+        autoFarmDungeonEnabled = autoFarmDungeonEnabled, 
+        autoJoinDungeonEnabled = autoJoinDungeonEnabled, 
+        autoJoinRaidEnabled = autoJoinRaidEnabled,
+        autoFarmRaidEnabled = autoFarmRaidEnabled, -- Save NEW Raid Toggle
+        exitDungeonWaveNumber = exitDungeonWaveNumber, -- Save NEW Exit Value
+        exitRaidWaveNumber = exitRaidWaveNumber,     -- Save NEW Exit Value
+        autoExitWaveEnabled = autoExitWaveEnabled,  -- Save NEW Exit Toggle
         
         -- Toggle states
-        -- LƯU TRỰC TIẾP BIẾN CHỦ (theo phong cách v4.4) để đảm bảo đồng bộ
         selectedFarmEnabled = selectedFarmEnabled, 
         autoAttackEnabled = autoAttackEnabled,
         farmRandomEnabled = farmRandomEnabled,
@@ -630,6 +761,10 @@ local function LoadConfig(profileName)
         autoFarmDungeonEnabled = data.autoFarmDungeonEnabled or false
         autoJoinDungeonEnabled = data.autoJoinDungeonEnabled or false
         autoJoinRaidEnabled = data.autoJoinRaidEnabled or false
+        autoFarmRaidEnabled = data.autoFarmRaidEnabled or false -- Load NEW Raid Toggle
+        exitDungeonWaveNumber = data.exitDungeonWaveNumber or 0 -- Load NEW Exit Value
+        exitRaidWaveNumber = data.exitRaidWaveNumber or 0     -- Load NEW Exit Value
+        autoExitWaveEnabled = data.autoExitWaveEnabled or false -- Load NEW Exit Toggle
         
         -- Toggle states
         selectedFarmEnabled = data.selectedFarmEnabled or false
@@ -677,6 +812,10 @@ local function CreateNewProfile(profileName)
             autoFarmDungeonEnabled = false,
             autoJoinDungeonEnabled = false,
             autoJoinRaidEnabled = false,
+            autoFarmRaidEnabled = false, -- NEW
+            exitDungeonWaveNumber = 0, -- NEW
+            exitRaidWaveNumber = 0, -- NEW
+            autoExitWaveEnabled = false, -- NEW
             selectedFarmEnabled = false,
             autoAttackEnabled = false,
             farmRandomEnabled = false,
@@ -789,7 +928,7 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "⚡ HIMONO HUB v4.3 - DARK EDITION (MODIFIED)"
+Title.Text = "⚡ HIMONO HUB v4.3 - DARK EDITION (FINAL)"
 Title.TextColor3 = ColorTheme.Text
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
@@ -1191,9 +1330,10 @@ mainStatus.Parent = mainContent
 
 -- Biến lưu các toggle
 local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
-local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame
+local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame, raidFarmToggleFrame
 local autoJoinDungeonToggleFrame, autoJoinRaidToggleFrame, autoHatchEggToggleFrame
 local autoStatToggleFrame -- Được định nghĩa lại sau trong tab STATS
+local autoExitWaveToggleFrame -- NEW
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
     autoAttackEnabled = enabled
@@ -1343,14 +1483,12 @@ gachaCombo.Parent = gachaContent
 
 for _, gacha in ipairs(gachaTypes) do
     local toggle = CreateToggleSwitch("Enable Auto Roll " .. gacha, "Tự động roll " .. gacha, false, function(enabled)
-        -- Logic Auto Roll được cải tiến: Chỉ chạy 1 loop AutoRoll cho loại đã chọn
         local currentLoopName = "AutoRoll"..gacha
         if enabled then
-            -- Dừng tất cả các loop AutoRoll khác
             for _, typeName in ipairs(gachaTypes) do
                  if typeName ~= gacha then StopLoop("AutoRoll"..typeName) end
             end
-            selectedGachaType = gacha -- Đảm bảo loại gacha được chọn đúng
+            selectedGachaType = gacha
             StartLoop(currentLoopName, function() StartGacha(gacha) end, 2)
         else
             StopLoop(currentLoopName)
@@ -1428,11 +1566,10 @@ local dungeonModeCombo = CreateComboBox("Dungeon Mode", "Chọn chế độ dung
 end)
 dungeonModeCombo.Parent = dungeonContent
 
--- NEW: Auto Join Dungeon Toggle (Notification-Based từ V4.4)
+-- Auto Join Dungeon Toggle
 autoJoinDungeonToggleFrame = CreateToggleSwitch("Auto-join Dungeon", "Tự động join dungeon (CHỈ KHI CÓ THÔNG BÁO)", false, function(enabled)
     autoJoinDungeonEnabled = enabled
     if enabled then
-        -- Dùng interval lớn hơn để ít gọi CheckScreenNotifications hơn
         StartLoop("AutoJoinDungeon", AutoJoinDungeonLoop, 5) 
     else
         StopLoop("AutoJoinDungeon")
@@ -1448,7 +1585,11 @@ joinDungeonBtn.Parent = dungeonContent
 dungeonToggleFrame = CreateToggleSwitch("Enable Auto Farm Dungeon", "Tự động farm dungeon + tự về khi xong", false, function(enabled)
     autoFarmDungeonEnabled = enabled
     if enabled then
-        -- Nếu bật farm, tự động join dungeon ngay lập tức
+        if activeLoops["FarmRaid"] then
+            StopLoop("FarmRaid")
+            autoFarmRaidEnabled = false
+            UpdateToggleButton(raidFarmToggleFrame, false)
+        end
         JoinDungeon(selectedDungeonMode) 
     else
         StopLoop("FarmDungeon")
@@ -1467,11 +1608,10 @@ raidSection.TextSize = 16
 raidSection.TextXAlignment = Enum.TextXAlignment.Left
 raidSection.Parent = dungeonContent
 
--- NEW: Auto Join Raid Toggle (Notification-Based từ V4.4)
+-- Auto Join Raid Toggle
 autoJoinRaidToggleFrame = CreateToggleSwitch("Auto-join Raid", "Tự động join raid (CHỈ KHI CÓ THÔNG BÁO)", false, function(enabled)
     autoJoinRaidEnabled = enabled
     if enabled then
-        -- Dùng interval lớn hơn để ít gọi CheckScreenNotifications hơn
         StartLoop("AutoJoinRaid", AutoJoinRaidLoop, 5)
     else
         StopLoop("AutoJoinRaid")
@@ -1484,10 +1624,110 @@ local joinRaidBtn = CreateActionButton("Join Raid", "Tham gia raid", function()
 end)
 joinRaidBtn.Parent = dungeonContent
 
+-- NEW: Auto Farm Raid Toggle
+raidFarmToggleFrame = CreateToggleSwitch("Enable Auto Farm Raid", "Tự động farm Raid + tự về khi xong", false, function(enabled)
+    autoFarmRaidEnabled = enabled
+    if enabled then
+        if activeLoops["FarmDungeon"] then
+            StopLoop("FarmDungeon")
+            autoFarmDungeonEnabled = false
+            UpdateToggleButton(dungeonToggleFrame, false)
+        end
+        JoinRaid()
+    else
+        StopLoop("FarmRaid")
+    end
+end)
+raidFarmToggleFrame.Parent = dungeonContent
+
+
+-- Auto Exit Section
+local autoExitSection = Instance.new("TextLabel")
+autoExitSection.Size = UDim2.new(1, -20, 0, 30)
+autoExitSection.BackgroundTransparency = 1
+autoExitSection.Text = "🚪 AUTO EXIT WAVE/ROOM"
+autoExitSection.TextColor3 = ColorTheme.Danger
+autoExitSection.Font = Enum.Font.GothamBold
+autoExitSection.TextSize = 16
+autoExitSection.TextXAlignment = Enum.TextXAlignment.Left
+autoExitSection.Parent = dungeonContent
+
+autoExitWaveToggleFrame = CreateToggleSwitch("Enable Auto Exit Wave/Room", "Thoát khi đạt Room/Wave đã đặt (Cần nhập giá trị)", false, function(enabled)
+    autoExitWaveEnabled = enabled
+    if enabled and exitDungeonWaveNumber == 0 and exitRaidWaveNumber == 0 then
+        mainStatus.Text = "❌ Vui lòng nhập số Wave/Room để kích hoạt!"
+    end
+end)
+autoExitWaveToggleFrame.Parent = dungeonContent
+
+-- Container cho 2 TextBox
+local exitInputContainer = Instance.new("Frame")
+exitInputContainer.Size = UDim2.new(1, 0, 0, 45)
+exitInputContainer.BackgroundTransparency = 1
+exitInputContainer.Parent = dungeonContent
+
+local dungeonExitInput = Instance.new("TextBox")
+dungeonExitInput.Name = "DungeonExitInput"
+dungeonExitInput.Size = UDim2.new(0.4, 0, 0, 35)
+dungeonExitInput.Position = UDim2.new(0, 10, 0, 5)
+dungeonExitInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+dungeonExitInput.TextColor3 = ColorTheme.Text
+dungeonExitInput.PlaceholderText = "Dungeon Exit Wave/Room (0)"
+dungeonExitInput.PlaceholderColor3 = ColorTheme.TextSecondary
+dungeonExitInput.Text = tostring(exitDungeonWaveNumber)
+dungeonExitInput.Font = Enum.Font.Gotham
+dungeonExitInput.TextSize = 12
+dungeonExitInput.Parent = exitInputContainer
+
+local raidExitInput = Instance.new("TextBox")
+raidExitInput.Name = "RaidExitInput"
+raidExitInput.Size = UDim2.new(0.4, 0, 0, 35)
+raidExitInput.Position = UDim2.new(0.5, 10, 0, 5)
+raidExitInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+raidExitInput.TextColor3 = ColorTheme.Text
+raidExitInput.PlaceholderText = "Raid Exit Wave/Room (0)"
+raidExitInput.PlaceholderColor3 = ColorTheme.TextSecondary
+raidExitInput.Text = tostring(exitRaidWaveNumber)
+raidExitInput.Font = Enum.Font.Gotham
+raidExitInput.TextSize = 12
+raidExitInput.Parent = exitInputContainer
+
+-- Corner cho 2 TextBox
+Instance.new("UICorner", dungeonExitInput).CornerRadius = UDim.new(0.1, 0)
+Instance.new("UICorner", raidExitInput).CornerRadius = UDim.new(0.1, 0)
+
+-- Logic xử lý Input Dungeon Exit
+SafeConnect(dungeonExitInput.FocusLost, function(enterPressed)
+    if enterPressed then
+        local num = tonumber(dungeonExitInput.Text)
+        if num and num >= 0 then
+            exitDungeonWaveNumber = math.floor(num)
+            mainStatus.Text = "📝 Đã đặt Auto Exit Dungeon tại Wave/Room: " .. exitDungeonWaveNumber
+        else
+            mainStatus.Text = "❌ Vui lòng nhập số Wave/Room hợp lệ (>=0) cho Dungeon."
+            dungeonExitInput.Text = tostring(exitDungeonWaveNumber)
+        end
+    end
+end)
+
+-- Logic xử lý Input Raid Exit
+SafeConnect(raidExitInput.FocusLost, function(enterPressed)
+    if enterPressed then
+        local num = tonumber(raidExitInput.Text)
+        if num and num >= 0 then
+            exitRaidWaveNumber = math.floor(num)
+            mainStatus.Text = "📝 Đã đặt Auto Exit Raid tại Wave/Room: " .. exitRaidWaveNumber
+        else
+            mainStatus.Text = "❌ Vui lòng nhập số Wave/Room hợp lệ (>=0) cho Raid."
+            raidExitInput.Text = tostring(exitRaidWaveNumber)
+        end
+    end
+end)
+
 local dungeonStatus = Instance.new("TextLabel")
 dungeonStatus.Size = UDim2.new(1, -20, 0, 30)
 dungeonStatus.BackgroundTransparency = 1
-dungeonStatus.Text = "🏰 System: Auto-join đã sẵn sàng!"
+dungeonStatus.Text = "🏰 System: Auto-join và Auto-exit đã sẵn sàng!"
 dungeonStatus.TextColor3 = ColorTheme.Text
 dungeonStatus.Font = Enum.Font.Gotham
 dungeonStatus.TextSize = 12
@@ -1545,7 +1785,6 @@ end
 local function RefreshProfileComboBox()
     local profileNames = GetProfileNames()
     
-    -- Tìm và cập nhật ComboBox (Hơi phức tạp vì phải tìm frame cha)
     local targetComboFrame = nil
     for _, child in pairs(configContent:GetChildren()) do
         if child:IsA("Frame") and child:FindFirstChildOfClass("TextLabel") then
@@ -1561,8 +1800,6 @@ local function RefreshProfileComboBox()
         local dropdown = targetComboFrame:FindFirstChildOfClass("TextButton")
         if dropdown then
             dropdown.Text = selectedConfigProfile
-            -- (Để làm mới menu dropdown list items thì cần rebuild ComboBox, 
-            -- nhưng đây là đủ để cập nhật text hiển thị)
         end
     end
 end
@@ -1631,7 +1868,7 @@ stealthToggleFrame = CreateToggleSwitch("Enable Stealth Mode", "Ẩn hoạt đ�
 end)
 stealthToggleFrame.Parent = settingsContent
 
--- NEW: Hàm dừng tất cả các loop (ĐỂ ÁP DỤNG CONFIG MỚI ĐÚNG CÁCH)
+-- NEW: Hàm dừng tất cả các loop 
 local function StopAllLoops()
     for name, _ in pairs(activeLoops) do
         StopLoop(name)
@@ -1640,7 +1877,6 @@ end
 
 -- NEW: Hàm áp dụng config đã load
 local function ApplyLoadedConfig()
-    -- DỪNG TẤT CẢ CÁC LOOP ĐANG HOẠT ĐỘNG TRƯỚC
     StopAllLoops()
 
     -- Cập nhật tất cả các nút toggle
@@ -1652,7 +1888,8 @@ local function ApplyLoadedConfig()
     UpdateToggleButton(antiAfkToggleFrame, antiAFKEnabled)
     
     UpdateToggleButton(autoHatchEggToggleFrame, autoHatchEggEnabled)
-    -- Cập nhật trạng thái dungeon toggle
+    
+    -- Cập nhật trạng thái dungeon/raid toggle
     local dungeonFarmToggle = tabFrames["🏰 DUNGEON"]:FindFirstChild("Toggle_EnableAutoFarmDungeon")
     if dungeonFarmToggle then UpdateToggleButton(dungeonFarmToggle, autoFarmDungeonEnabled) end
     
@@ -1662,7 +1899,20 @@ local function ApplyLoadedConfig()
     local autoJoinRaidToggle = tabFrames["🏰 DUNGEON"]:FindFirstChild("Toggle_AutojoinRaid")
     if autoJoinRaidToggle then UpdateToggleButton(autoJoinRaidToggle, autoJoinRaidEnabled) end
     
+    local raidFarmToggle = tabFrames["🏰 DUNGEON"]:FindFirstChild("Toggle_EnableAutoFarmRaid")
+    if raidFarmToggle then UpdateToggleButton(raidFarmToggle, autoFarmRaidEnabled) end -- NEW Raid Farm Toggle
+    
+    local autoExitWaveToggle = tabFrames["🏰 DUNGEON"]:FindFirstChild("Toggle_EnableAutoExitWave/Room")
+    if autoExitWaveToggle then UpdateToggleButton(autoExitWaveToggle, autoExitWaveEnabled) end -- NEW Auto Exit Toggle
+    
     UpdateToggleButton(autoStatToggleFrame, autoStatEnabled)
+    
+    -- Cập nhật giá trị TextBox
+    local dungeonExitInput = tabFrames["🏰 DUNGEON"]:FindFirstChildOfClass("Frame"):FindFirstChild("DungeonExitInput")
+    if dungeonExitInput then dungeonExitInput.Text = tostring(exitDungeonWaveNumber) end
+    
+    local raidExitInput = tabFrames["🏰 DUNGEON"]:FindFirstChildOfClass("Frame"):FindFirstChild("RaidExitInput")
+    if raidExitInput then raidExitInput.Text = tostring(exitRaidWaveNumber) end
     
     -- Cập nhật stealth indicator
     StealthIndicator.BackgroundColor3 = stealthMode and ColorTheme.Success or ColorTheme.Danger
@@ -1675,11 +1925,14 @@ local function ApplyLoadedConfig()
     if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
     if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
     if autoHatchEggEnabled then StartLoop("AutoHatchEgg", AutoHatchEggLogic, 0.5) end
+    
     if autoFarmDungeonEnabled then 
-        -- Nếu auto farm dungeon được bật, tự động join và khởi động loop
         JoinDungeon(selectedDungeonMode) 
     end
-    -- Dùng logic Notification-Based từ V4.4
+    if autoFarmRaidEnabled then 
+        JoinRaid() 
+    end
+    
     if autoJoinDungeonEnabled then StartLoop("AutoJoinDungeon", AutoJoinDungeonLoop, 5) end
     if autoJoinRaidEnabled then StartLoop("AutoJoinRaid", AutoJoinRaidLoop, 5) end
     if autoStatEnabled then StartLoop("AutoStat", AutoStatLogic, 1) end
@@ -1758,4 +2011,4 @@ else
     ApplyLoadedConfig()
 end
 
-print("⚡ HIMONO HUB v4.3 - DARK EDITION (MODIFIED) LOADED!")
+print("⚡ HIMONO HUB v4.3 - DARK EDITION (FINAL) LOADED!")
