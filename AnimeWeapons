@@ -1,4 +1,4 @@
--- Himono Hub v4.6 - DARK EDITION (FIXED CONFIG SAVE/LOAD)
+-- Himono Hub v4.6 - DARK EDITION (FIXED AUTO SYSTEMS)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -20,7 +20,7 @@ local selectedStat = "Mastery"
 local autoOpenEggEnabled = false
 local autoStatEnabled = false
 
--- NEW: Biến dungeon system - IMPROVED
+-- NEW: Biến dungeon system - FIXED
 local selectedDungeonMode = "Easy"
 local autoFarmDungeonEnabled = false
 local autoJoinDungeonEnabled = false
@@ -73,10 +73,44 @@ local ColorTheme = {
     Warning = Color3.fromRGB(255, 180, 0)
 }
 
--- Safe remote fire
-local function SafeFire(remote, ...)
+-- Safe remote fire - FIXED REMOTE DETECTION
+local function SafeFire(remoteName, ...)
     if stealthMode then RunService.Heartbeat:Wait() end
-    remote:FireServer(...)
+    
+    -- Tìm remote theo nhiều cách khác nhau
+    local remote = nil
+    
+    -- Cách 1: Tìm trong ReplicatedStorage
+    if ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable") then
+        remote = ReplicatedStorage.Reply.Reliable
+    end
+    
+    -- Cách 2: Tìm remote event/function trực tiếp
+    if not remote then
+        remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("RemoteFunction")
+    end
+    
+    -- Cách 3: Tìm bất kỳ remote nào có thể dùng được
+    if not remote then
+        for _, child in pairs(ReplicatedStorage:GetDescendants()) do
+            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+                remote = child
+                break
+            end
+        end
+    end
+    
+    if remote then
+        if remote:IsA("RemoteEvent") then
+            remote:FireServer(...)
+        elseif remote:IsA("RemoteFunction") then
+            remote:InvokeServer(...)
+        end
+        return true
+    else
+        warn("❌ Không tìm thấy remote: " .. tostring(remoteName))
+        return false
+    end
 end
 
 local function SafeWait()
@@ -134,85 +168,36 @@ local function DisableAntiAFK()
     end
 end
 
--- NEW: Performance Functions - FIXED WHITE SCREEN
-local function EnableFPSBoost()
-    if not originalGraphicsQuality then
-        originalGraphicsQuality = settings().Rendering.QualityLevel
-    end
-    
-    settings().Rendering.QualityLevel = 1
-    settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01
-    settings().Rendering.EagerBulkExecution = true
-    
-    -- Tắt các hiệu ứng
-    if Lighting:FindFirstChild("Blur") then Lighting.Blur:Destroy() end
-    if Lighting:FindFirstChild("SunRays") then Lighting.SunRays:Destroy() end
-    if Lighting:FindFirstChild("ColorCorrection") then Lighting.ColorCorrection:Destroy() end
-    
-    -- Giảm chất lượng lighting
-    Lighting.GlobalShadows = false
-    Lighting.FogEnd = 100000
-    Lighting.Brightness = 2
-end
-
-local function DisableFPSBoost()
-    if originalGraphicsQuality then
-        settings().Rendering.QualityLevel = originalGraphicsQuality
-        originalGraphicsQuality = nil
-    end
-end
-
-local function EnableWhiteScreen()
-    if whiteScreenGui then
-        whiteScreenGui:Destroy()
-    end
-    
-    whiteScreenGui = Instance.new("ScreenGui")
-    whiteScreenGui.Name = "WhiteScreen"
-    whiteScreenGui.ResetOnSpawn = false
-    whiteScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    whiteScreenGui.Parent = game.CoreGui
-    
-    local whiteFrame = Instance.new("Frame")
-    whiteFrame.Size = UDim2.new(1, 0, 1, 0)
-    whiteFrame.BackgroundColor3 = Color3.new(1, 1, 1)
-    whiteFrame.BorderSizePixel = 0
-    whiteFrame.Parent = whiteScreenGui
-    
-    whiteScreenEnabled = whiteScreenGui
-end
-
-local function DisableWhiteScreen()
-    if whiteScreenEnabled then
-        whiteScreenEnabled:Destroy()
-        whiteScreenEnabled = false
-        whiteScreenGui = nil
-    end
-end
-
--- SIMPLIFIED: Không lọc NPC
+-- SIMPLIFIED: Không lọc NPC - FIXED ENEMY DETECTION
 local function FindEnemiesInRange(range)
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return {} end
     local enemies = {}
     local playerPos = character.HumanoidRootPart.Position
+    
     for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("Head") then
-            local isPlayer = false
-            for _, player in pairs(Players:GetPlayers()) do
-                if player.Character == obj then isPlayer = true; break end
-            end
-            if not isPlayer and obj.Humanoid.Health > 0 then
-                local distance = (playerPos - obj.Head.Position).Magnitude
-                if distance <= (range or 100) then
-                    table.insert(enemies, {
-                        Model = obj,
-                        Name = obj.Name,
-                        Position = obj.Head.Position,
-                        Distance = distance,
-                        Health = obj.Humanoid.Health,
-                        MaxHealth = obj.Humanoid.MaxHealth
-                    })
+        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj.Humanoid.Health > 0 then
+            local rootPart = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head")
+            if rootPart then
+                local isPlayer = false
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player.Character == obj then 
+                        isPlayer = true; 
+                        break 
+                    end
+                end
+                if not isPlayer then
+                    local distance = (playerPos - rootPart.Position).Magnitude
+                    if distance <= (range or 100) then
+                        table.insert(enemies, {
+                            Model = obj,
+                            Name = obj.Name,
+                            Position = rootPart.Position,
+                            Distance = distance,
+                            Health = obj.Humanoid.Health,
+                            MaxHealth = obj.Humanoid.MaxHealth
+                        })
+                    end
                 end
             end
         end
@@ -221,69 +206,44 @@ local function FindEnemiesInRange(range)
     return enemies
 end
 
--- NEW: Kiểm tra xem có đang ở trong dungeon không
+-- NEW: Kiểm tra xem có đang ở trong dungeon không - FIXED
 local function CheckIfInDungeon()
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return false end
     
     local playerPos = character.HumanoidRootPart.Position
     
-    -- Kiểm tra các dấu hiệu của dungeon
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("dungeon") or obj.Name:lower():find("raid") or obj.Name:lower():find("boss") then
-            if (playerPos - obj.Position).Magnitude < 500 then
-                return true
-            end
+    -- Kiểm tra tên map hoặc các đối tượng đặc biệt
+    if workspace:FindFirstChild("Map") then
+        local map = workspace.Map
+        local mapName = map.Name:lower()
+        if mapName:find("dungeon") or mapName:find("raid") or mapName:find("boss") then
+            return true
         end
     end
     
-    -- Kiểm tra trong lighting (môi trường dungeon thường tối)
-    if Lighting.Ambient.r < 0.3 and Lighting.Ambient.g < 0.3 and Lighting.Ambient.b < 0.3 then
-        return true
+    -- Kiểm tra các part đặc biệt
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Part") then
+            local objName = obj.Name:lower()
+            if objName:find("dungeon") or objName:find("raid") or objName:find("boss") then
+                if (playerPos - obj.Position).Magnitude < 200 then
+                    return true
+                end
+            end
+        end
     end
     
     return false
 end
 
--- NEW: Tìm enemies trong dungeon (chỉ tìm trong phạm vi dungeon)
+-- NEW: Tìm enemies trong dungeon - FIXED
 local function FindDungeonEnemies(range)
-    local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return {} end
-    
-    local enemies = {}
-    local playerPos = character.HumanoidRootPart.Position
-    
-    -- Chỉ tìm enemies nếu đang trong dungeon
-    if not CheckIfInDungeon() then
-        return {}
-    end
-    
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("Head") then
-            local isPlayer = false
-            for _, player in pairs(Players:GetPlayers()) do
-                if player.Character == obj then isPlayer = true; break end
-            end
-            if not isPlayer and obj.Humanoid.Health > 0 then
-                local distance = (playerPos - obj.Head.Position).Magnitude
-                if distance <= (range or 100) then
-                    table.insert(enemies, {
-                        Model = obj,
-                        Name = obj.Name,
-                        Position = obj.Head.Position,
-                        Distance = distance,
-                        Health = obj.Humanoid.Health,
-                        MaxHealth = obj.Humanoid.MaxHealth
-                    })
-                end
-            end
-        end
-    end
-    table.sort(enemies, function(a, b) return a.Distance < b.Distance end)
-    return enemies
+    if not CheckIfInDungeon() then return {} end
+    return FindEnemiesInRange(range or 100)
 end
 
--- Group enemies by name
+-- Group enemies by name - FIXED
 local function GetEnemyGroups()
     local enemies = FindEnemiesInRange(200)
     local groups = {}
@@ -306,7 +266,7 @@ local function GetEnemyGroups()
     return groups
 end
 
--- NEW: Lưu vị trí hiện tại
+-- NEW: Lưu vị trí hiện tại - FIXED
 local function SaveCurrentPosition()
     local character = LocalPlayer.Character
     if character and character:FindFirstChild("HumanoidRootPart") then
@@ -315,7 +275,7 @@ local function SaveCurrentPosition()
     end
 end
 
--- NEW: Quay lại vị trí cũ
+-- NEW: Quay lại vị trí cũ - FIXED
 local function ReturnToOriginalPosition()
     if originalPosition then
         local character = LocalPlayer.Character
@@ -327,18 +287,22 @@ local function ReturnToOriginalPosition()
     end
 end
 
--- NEW: Kiểm tra dungeon đã hoàn thành chưa
+-- NEW: Kiểm tra dungeon đã hoàn thành chưa - FIXED
 local function CheckDungeonCompleted()
     local enemies = FindDungeonEnemies(200)
     return #enemies == 0
 end
 
--- Auto farm logic (Vòng Lặp Mục Tiêu Tốc Độ Cao)
+-- Auto farm logic (Vòng Lặp Mục Tiêu Tốc Độ Cao) - FIXED
 local function FarmSelectedLogic()
-    if #selectedEnemyNames == 0 then return end
+    if #selectedEnemyNames == 0 then 
+        return 
+    end
     
     local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    if not character or not character:FindFirstChild("HumanoidRootPart") then 
+        return 
+    end
     
     local enemies = FindEnemiesInRange(200)
     local targets = {}
@@ -354,39 +318,41 @@ local function FarmSelectedLogic()
     
     table.sort(targets, function(a, b) return a.Distance < b.Distance end)
     
-    if #targets == 0 then return end
+    if #targets == 0 then 
+        return 
+    end
     
     for _, target in ipairs(targets) do
         if not activeLoops["FarmSelected"] then break end 
         
         if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
             local offset = Vector3.new(
-                math.random(-10, 10) / 10,
+                math.random(-5, 5),
                 3,
-                math.random(-10, 10) / 10
+                math.random(-5, 5)
             )
             character.HumanoidRootPart.CFrame = CFrame.new(target.Position + offset)
             
-            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-            if remote then 
-                SafeFire(remote, "Attack", target.Model)
-                task.wait(0.05)
-                SafeFire(remote, "Attack", target.Model)
-            end
+            -- FIXED: Attack với remote phù hợp
+            SafeFire("Attack", target.Model)
+            task.wait(0.1)
         end
-        task.wait(0.1) 
+        if not activeLoops["FarmSelected"] then break end
+        task.wait(0.1)
     end
 end
 
--- NEW: Auto farm dungeon logic - IMPROVED
+-- NEW: Auto farm dungeon logic - FIXED
 local function FarmDungeonLogic()
     local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    if not character or not character:FindFirstChild("HumanoidRootPart") then 
+        return 
+    end
     
     -- Kiểm tra xem có đang trong dungeon không
     if not CheckIfInDungeon() then
         dungeonCheckCount = dungeonCheckCount + 1
-        if dungeonCheckCount >= 5 then -- Sau 5 lần check không thấy dungeon thì thoát
+        if dungeonCheckCount >= 3 then
             print("❌ Không tìm thấy dungeon, đang thoát...")
             ReturnToOriginalPosition()
             StopLoop("FarmDungeon")
@@ -398,45 +364,36 @@ local function FarmDungeonLogic()
         return
     end
     
-    dungeonCheckCount = 0 -- Reset counter khi đang trong dungeon
+    dungeonCheckCount = 0
     
     -- Tìm enemies trong dungeon
     local enemies = FindDungeonEnemies(100)
     
     if #enemies > 0 then
-        -- Có enemies, farm chúng
         for _, enemy in ipairs(enemies) do
             if not activeLoops["FarmDungeon"] then break end
             
             if enemy.Model and enemy.Model:FindFirstChild("Humanoid") and enemy.Model.Humanoid.Health > 0 then
                 local offset = Vector3.new(
-                    math.random(-8, 8) / 10,
+                    math.random(-3, 3),
                     2,
-                    math.random(-8, 8) / 10
+                    math.random(-3, 3)
                 )
                 character.HumanoidRootPart.CFrame = CFrame.new(enemy.Position + offset)
                 
-                local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-                if remote then 
-                    SafeFire(remote, "Attack", enemy.Model)
-                    task.wait(0.05)
-                    SafeFire(remote, "Attack", enemy.Model)
-                end
+                SafeFire("Attack", enemy.Model)
                 task.wait(0.1)
             end
         end
     else
-        -- Không có enemies, kiểm tra xem dungeon đã hoàn thành chưa
         if CheckDungeonCompleted() then
             print("✅ Dungeon completed! Returning to original position...")
-            task.wait(2) -- Chờ một chút để đảm bảo
+            task.wait(2)
             ReturnToOriginalPosition()
             
-            -- Tạm dừng auto farm dungeon
             StopLoop("FarmDungeon")
             autoFarmDungeonEnabled = false
             
-            -- Cập nhật UI
             if dungeonToggleFrame then
                 UpdateToggleButton(dungeonToggleFrame, false)
             end
@@ -446,97 +403,40 @@ local function FarmDungeonLogic()
     end
 end
 
--- NEW: Auto join dungeon logic - IMPROVED
+-- NEW: Auto join dungeon logic - FIXED
 local function AutoJoinDungeonLogic()
     if autoJoinDungeonEnabled and not CheckIfInDungeon() then
-        local foundDungeon = false
-        
-        -- Kiểm tra trong workspace
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("Message") or (obj:IsA("Part") and (obj.Name:lower():find("dungeon") or obj.Name:lower():find("join"))) then
-                local messageText = obj.Text or obj.Name or ""
-                if (messageText:lower():find("dungeon") and messageText:lower():find("open")) or messageText:lower():find("join") then
-                    foundDungeon = true
-                    break
-                end
-            end
-        end
-        
-        -- Kiểm tra trong PlayerGui
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-            for _, gui in pairs(playerGui:GetDescendants()) do
-                if gui:IsA("TextLabel") or gui:IsA("TextButton") or gui:IsA("TextLabel") then
-                    local text = gui.Text or ""
-                    if (text:lower():find("dungeon") and text:lower():find("open")) or text:lower():find("join") then
-                        foundDungeon = true
-                        break
-                    end
-                end
-            end
-        end
-        
-        if foundDungeon then
-            print("🎯 Tìm thấy dungeon, đang join...")
-            SaveCurrentPosition() -- Lưu vị trí trước khi join dungeon
-            JoinDungeon(selectedDungeonMode)
-        end
+        print("🔍 Đang tìm dungeon để join...")
+        SaveCurrentPosition()
+        JoinDungeon(selectedDungeonMode)
     end
 end
 
--- NEW: Auto join raid logic - IMPROVED
+-- NEW: Auto join raid logic - FIXED
 local function AutoJoinRaidLogic()
     if autoJoinRaidEnabled and not CheckIfInDungeon() then
-        local foundRaid = false
-        
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("Message") or (obj:IsA("Part") and obj.Name:lower():find("raid")) then
-                local messageText = obj.Text or obj.Name or ""
-                if messageText:lower():find("raid") and messageText:lower():find("open") then
-                    foundRaid = true
-                    break
-                end
-            end
-        end
-        
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-            for _, gui in pairs(playerGui:GetDescendants()) do
-                if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-                    local text = gui.Text or ""
-                    if text:lower():find("raid") and text:lower():find("open") then
-                        foundRaid = true
-                        break
-                    end
-                end
-            end
-        end
-        
-        if foundRaid then
-            print("⚔️ Tìm thấy raid, đang join...")
-            SaveCurrentPosition() -- Lưu vị trí trước khi join raid
-            JoinRaid()
-        end
+        print("🔍 Đang tìm raid để join...")
+        SaveCurrentPosition()
+        JoinRaid()
     end
 end
 
--- NEW: Auto stat logic
+-- NEW: Auto stat logic - FIXED
 local function AutoStatLogic()
     if autoStatEnabled then
         DistributeStat(selectedStat)
     end
 end
 
--- Auto farm logic
+-- Auto farm logic - FIXED
 local function AutoAttackLogic()
     local enemies = FindEnemiesInRange(50)
     if #enemies > 0 then
         local nearestEnemy = enemies[1]
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
-            character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + Vector3.new(0,2,0))
-            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-            if remote then SafeFire(remote, "Attack", nearestEnemy.Model) end
+            character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + Vector3.new(0,3,0))
+            SafeFire("Attack", nearestEnemy.Model)
         end
     end
 end
@@ -547,9 +447,8 @@ local function FarmRandomLogic()
         local randomEnemy = enemies[math.random(1, #enemies)]
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
-            character.HumanoidRootPart.CFrame = CFrame.new(randomEnemy.Position + Vector3.new(0,2,0))
-            local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-            if remote then SafeFire(remote, "Attack", randomEnemy.Model) end
+            character.HumanoidRootPart.CFrame = CFrame.new(randomEnemy.Position + Vector3.new(0,3,0))
+            SafeFire("Attack", randomEnemy.Model)
         end
     end
 end
@@ -557,143 +456,137 @@ end
 local function AutoCollectLogic()
     local character = LocalPlayer.Character
     if not character then return end
+    
     for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Part") and (obj.Name:lower():find("drop") or obj.Name:lower():find("coin") or obj.Name:lower():find("reward")) then
+        if obj:IsA("Part") and (obj.Name:lower():find("drop") or obj.Name:lower():find("coin") or obj.Name:lower():find("reward") or obj.Name:lower():find("orb")) then
             local distance = (character.HumanoidRootPart.Position - obj.Position).Magnitude
             if distance < 20 then
-                local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
-                if remote then SafeFire(remote, "Collect", obj) end
+                SafeFire("Collect", obj)
             end
         end
     end
 end
 
--- Các hàm cơ bản (Gacha, Teleport, Stats)
+-- Các hàm cơ bản (Gacha, Teleport, Stats) - FIXED
 local function StartGacha(gachaType)
-    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-    if remote then
-        local args = {
-            [1] = "Crate Roll Start",
-            [2] = {
-                [1] = gachaType,
-                [2] = true
-            }
+    local args = {
+        [1] = "Crate Roll Start",
+        [2] = {
+            [1] = gachaType,
+            [2] = true
         }
-        SafeFire(remote, unpack(args))
-        task.wait(1)
-        SafeFire(remote, "Crate Roll Stop")
-    end
+    }
+    SafeFire("Gacha", unpack(args))
+end
+
+local function StopGacha()
+    SafeFire("StopGacha", "Crate Roll Stop")
 end
 
 local function TeleportToZone(zoneName)
-    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-    if remote then
-        local args = {
-            [1] = "Zone Teleport",
-            [2] = {
-                [1] = zoneName
-            }
+    local zoneMap = {
+        ["Zone 1"] = "Dungeon",
+        ["Zone 2"] = "Naruto", 
+        ["Zone 3"] = "DragonBall",
+        ["Zone 4"] = "OnePiece"
+    }
+    
+    local actualZone = zoneMap[zoneName] or zoneName
+    
+    local args = {
+        [1] = "Zone Teleport",
+        [2] = {
+            [1] = actualZone
         }
-        SafeFire(remote, unpack(args))
-    end
+    }
+    SafeFire("Teleport", unpack(args))
 end
 
 local function DistributeStat(statName)
-    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-    if remote then
-        local args = {
-            [1] = "Distribute Stat Point",
-            [2] = {
-                [1] = statName
-            }
+    local args = {
+        [1] = "Distribute Stat Point",
+        [2] = {
+            [1] = statName
         }
-        SafeFire(remote, unpack(args))
-    end
+    }
+    SafeFire("Stat", unpack(args))
 end
 
 -- NEW: Join dungeon function - FIXED
 local function JoinDungeon(mode)
-    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-    if remote then
-        local modeNumber
-        if mode == "Easy" then
-            modeNumber = "1"
-        elseif mode == "Medium" then
-            modeNumber = "2"
-        elseif mode == "Hard" then
-            modeNumber = "3"
-        else
-            modeNumber = "1"
-        end
-        
-        local dungeonCode = "Dungeon:" .. modeNumber
-        
-        local args = {
-            [1] = "Join Gamemode",
-            [2] = {
-                [1] = dungeonCode
-            }
+    local modeNumber
+    if mode == "Easy" then
+        modeNumber = "1"
+    elseif mode == "Medium" then
+        modeNumber = "2" 
+    elseif mode == "Hard" then
+        modeNumber = "3"
+    else
+        modeNumber = "1"
+    end
+    
+    local dungeonCode = "Dungeon:" .. modeNumber
+    
+    local args = {
+        [1] = "Join Gamemode",
+        [2] = {
+            [1] = dungeonCode
         }
-        
-        SafeFire(remote, unpack(args))
-        
-        -- Reset dungeon state
-        dungeonCompleted = false
-        dungeonCheckCount = 0
-        
-        mainStatus.Text = "🏰 Đã join dungeon: " .. mode
-        
-        -- Nếu auto farm dungeon được bật, bắt đầu farm sau khi join
-        if autoFarmDungeonEnabled then
-            task.wait(3)
-            StartLoop("FarmDungeon", FarmDungeonLogic, 0.2)
-        end
+    }
+    
+    SafeFire("JoinDungeon", unpack(args))
+    
+    dungeonCompleted = false
+    dungeonCheckCount = 0
+    
+    mainStatus.Text = "🏰 Đã join dungeon: " .. mode
+    
+    if autoFarmDungeonEnabled then
+        task.wait(3)
+        StartLoop("FarmDungeon", FarmDungeonLogic, 0.3)
     end
 end
 
 -- NEW: Join raid function - FIXED
 local function JoinRaid()
-    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-    if remote then
-        local raidCode = "Raid:1"
-        
-        local args = {
-            [1] = "Join Gamemode",
-            [2] = {
-                [1] = raidCode
-            }
+    local raidCode = "Raid:1"
+    
+    local args = {
+        [1] = "Join Gamemode",
+        [2] = {
+            [1] = raidCode
         }
-        
-        SafeFire(remote, unpack(args))
-        
-        -- Reset dungeon state
-        dungeonCompleted = false
-        dungeonCheckCount = 0
-        
-        mainStatus.Text = "⚔️ Đã join raid!"
-        
-        -- Nếu auto farm dungeon được bật, bắt đầu farm sau khi join
-        if autoFarmDungeonEnabled then
-            task.wait(3)
-            StartLoop("FarmDungeon", FarmDungeonLogic, 0.2)
-        end
+    }
+    
+    SafeFire("JoinRaid", unpack(args))
+    
+    dungeonCompleted = false
+    dungeonCheckCount = 0
+    
+    mainStatus.Text = "⚔️ Đã join raid!"
+    
+    if autoFarmDungeonEnabled then
+        task.wait(3)
+        StartLoop("FarmDungeon", FarmDungeonLogic, 0.3)
     end
 end
 
--- Auto Open Egg với logic kiểm tra khoảng cách
+-- Auto Open Egg với logic kiểm tra khoảng cách - FIXED
 local function AutoOpenEggLogic()
     local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    if not character or not character:FindFirstChild("HumanoidRootPart") then 
+        return 
+    end
     
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and (obj.Name:lower():find("egg") or obj.Name:lower():find("crate")) then
-            local distance = (character.HumanoidRootPart.Position - obj:GetPivot().Position).Magnitude
-            if distance < 15 then
-                local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-                if remote then
-                    SafeFire(remote, "Open Star", {[1]="Egg"})
+            local rootPart = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head") or obj:FindFirstChild("PrimaryPart")
+            if rootPart then
+                local distance = (character.HumanoidRootPart.Position - rootPart.Position).Magnitude
+                if distance < 15 then
+                    SafeFire("OpenEgg", "Open Star", {[1]="Egg"})
+                    break
                 end
-                break
             end
         end
     end
@@ -732,17 +625,14 @@ local function SaveConfig()
         autoStatEnabled = autoStatEnabled,
         stealthMode = stealthMode,
         
-        -- Dungeon settings - FIXED: Lưu cả trạng thái
         selectedDungeonMode = selectedDungeonMode,
         autoFarmDungeonEnabled = autoFarmDungeonEnabled,
         autoJoinDungeonEnabled = autoJoinDungeonEnabled,
         autoJoinRaidEnabled = autoJoinRaidEnabled,
         
-        -- Performance settings
         fpsBoostEnabled = fpsBoostEnabled,
         whiteScreenEnabled = whiteScreenEnabled,
         
-        -- Toggle states - FIXED: Thêm dungeon states
         selectedFarmEnabled = activeLoops["FarmSelected"] or false,
         autoAttackEnabled = activeLoops["AutoAttack"] or false,
         farmRandomEnabled = activeLoops["FarmRandom"] or false,
@@ -750,7 +640,6 @@ local function SaveConfig()
         stealthModeEnabled = stealthMode,
         antiAFKEnabled = antiAFKEnabled,
         
-        -- NEW: Lưu riêng trạng thái dungeon toggles
         dungeonJoinToggleState = autoJoinDungeonEnabled,
         dungeonFarmToggleState = autoFarmDungeonEnabled,
         raidJoinToggleState = autoJoinRaidEnabled,
@@ -775,13 +664,11 @@ local function LoadConfig(profileName)
         autoStatEnabled = data.autoStatEnabled or false
         stealthMode = data.stealthMode or true
         
-        -- Dungeon settings - FIXED: Load cả trạng thái mới
         selectedDungeonMode = data.selectedDungeonMode or "Easy"
         autoFarmDungeonEnabled = data.autoFarmDungeonEnabled or false
         autoJoinDungeonEnabled = data.autoJoinDungeonEnabled or false
         autoJoinRaidEnabled = data.autoJoinRaidEnabled or false
         
-        -- NEW: Load riêng trạng thái dungeon toggles nếu có
         if data.dungeonJoinToggleState ~= nil then
             autoJoinDungeonEnabled = data.dungeonJoinToggleState
         end
@@ -795,11 +682,9 @@ local function LoadConfig(profileName)
             selectedDungeonMode = data.dungeonModeState
         end
         
-        -- Performance settings
         fpsBoostEnabled = data.fpsBoostEnabled or false
         whiteScreenEnabled = data.whiteScreenEnabled or false
         
-        -- Toggle states
         selectedFarmEnabled = data.selectedFarmEnabled or false
         autoAttackEnabled = data.autoAttackEnabled or false
         farmRandomEnabled = data.farmRandomEnabled or false
@@ -962,7 +847,7 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "⚡ HIMONO HUB v4.6 - CONFIG FIXED"
+Title.Text = "⚡ HIMONO HUB v4.6 - AUTO SYSTEMS FIXED"
 Title.TextColor3 = ColorTheme.Text
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
@@ -1052,7 +937,7 @@ ContentLayout.Parent = ContentScroll
 -- Tabs
 local tabs = {
     "🏠 MAIN", "🌾 FARM", "🎰 GACHA", "⚡ STATS", 
-    "🚀 TELEPORT", "🥚 OPEN EGG", "🏰 DUNGEON", "💾 CONFIG", "⚙️ SETTINGS", "🚀 PERFORMANCE"
+    "🚀 TELEPORT", "🥚 OPEN EGG", "🏰 DUNGEON", "💾 CONFIG", "⚙️ SETTINGS"
 }
 local tabFrames, tabButtons = {}, {}
 
@@ -1349,7 +1234,7 @@ local mainContent = tabFrames["🏠 MAIN"]
 local mainStatus = Instance.new("TextLabel")
 mainStatus.Size = UDim2.new(1, -20, 0, 40)
 mainStatus.BackgroundTransparency = 1
-mainStatus.Text = "⚡ CONFIG FIXED - Auto save/load dungeon settings!"
+mainStatus.Text = "⚡ AUTO SYSTEMS FIXED - Farm + Dungeon + Egg working!"
 mainStatus.TextColor3 = ColorTheme.Text
 mainStatus.Font = Enum.Font.Gotham
 mainStatus.TextSize = 14
@@ -1358,18 +1243,25 @@ mainStatus.Parent = mainContent
 -- Biến lưu các toggle
 local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
 local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame
-local fpsBoostToggleFrame, whiteScreenToggleFrame
 local autoJoinDungeonToggleFrame, autoJoinRaidToggleFrame
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
     autoAttackEnabled = enabled
-    if enabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) else StopLoop("AutoAttack") end
+    if enabled then 
+        StartLoop("AutoAttack", AutoAttackLogic, 0.3) 
+    else 
+        StopLoop("AutoAttack") 
+    end
 end)
 autoAttackToggleFrame.Parent = mainContent
 
 autoDropsToggleFrame = CreateToggleSwitch("Enable Auto Collect All Drops", "Tự động nhặt vật phẩm quanh bạn", false, function(enabled)
     autoCollectEnabled = enabled
-    if enabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) else StopLoop("AutoCollect") end
+    if enabled then 
+        StartLoop("AutoCollect", AutoCollectLogic, 1.0) 
+    else 
+        StopLoop("AutoCollect") 
+    end
 end)
 autoDropsToggleFrame.Parent = mainContent
 
@@ -1378,13 +1270,21 @@ local farmContent = tabFrames["🌾 FARM"]
 
 autoFarmSelectedToggleFrame = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên (SPEED: 0.1s)", false, function(enabled)
     selectedFarmEnabled = enabled
-    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) else StopLoop("FarmSelected") end 
+    if enabled then 
+        StartLoop("FarmSelected", FarmSelectedLogic, 0.1) 
+    else 
+        StopLoop("FarmSelected") 
+    end
 end)
 autoFarmSelectedToggleFrame.Parent = farmContent
 
 autoFarmRandomToggleFrame = CreateToggleSwitch("Enable Farm Random Enemies", "Tự động farm ngẫu nhiên", false, function(enabled)
     farmRandomEnabled = enabled
-    if enabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) else StopLoop("FarmRandom") end
+    if enabled then 
+        StartLoop("FarmRandom", FarmRandomLogic, 0.5) 
+    else 
+        StopLoop("FarmRandom") 
+    end
 end)
 autoFarmRandomToggleFrame.Parent = farmContent
 
@@ -1510,7 +1410,11 @@ gachaCombo.Parent = gachaContent
 for _, gacha in ipairs(gachaTypes) do
     local toggle = CreateToggleSwitch("Enable Auto Roll " .. gacha, "Tự động roll " .. gacha, false, function(enabled)
         if enabled then
-            StartLoop("AutoRoll"..gacha, function() StartGacha(gacha) end, 2)
+            StartLoop("AutoRoll"..gacha, function() 
+                StartGacha(gacha)
+                task.wait(1.5)
+                StopGacha()
+            end, 3)
         else
             StopLoop("AutoRoll"..gacha)
         end
@@ -1593,7 +1497,7 @@ dungeonModeCombo.Parent = dungeonContent
 autoJoinDungeonToggleFrame = CreateToggleSwitch("Enable Auto Join Dungeon", "Tự động join khi có thông báo dungeon open", false, function(enabled)
     autoJoinDungeonEnabled = enabled
     if enabled then
-        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 5)
+        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 10)
     else
         StopLoop("AutoJoinDungeon")
     end
@@ -1610,7 +1514,10 @@ dungeonToggleFrame = CreateToggleSwitch("Enable Auto Farm Dungeon", "Tự độn
     autoFarmDungeonEnabled = enabled
     if enabled then
         SaveCurrentPosition()
+        task.wait(1)
         JoinDungeon(selectedDungeonMode)
+        task.wait(3)
+        StartLoop("FarmDungeon", FarmDungeonLogic, 0.3)
     else
         StopLoop("FarmDungeon")
     end
@@ -1631,7 +1538,7 @@ raidSection.Parent = dungeonContent
 autoJoinRaidToggleFrame = CreateToggleSwitch("Enable Auto Join Raid", "Tự động join khi có thông báo raid open", false, function(enabled)
     autoJoinRaidEnabled = enabled
     if enabled then
-        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 5)
+        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 10)
     else
         StopLoop("AutoJoinRaid")
     end
@@ -1652,54 +1559,6 @@ dungeonStatus.TextColor3 = ColorTheme.Text
 dungeonStatus.Font = Enum.Font.Gotham
 dungeonStatus.TextSize = 12
 dungeonStatus.Parent = dungeonContent
-
--- PERFORMANCE TAB
-local performanceContent = tabFrames["🚀 PERFORMANCE"]
-
-local performanceSection = Instance.new("TextLabel")
-performanceSection.Size = UDim2.new(1, -20, 0, 30)
-performanceSection.BackgroundTransparency = 1
-performanceSection.Text = "🚀 PERFORMANCE BOOST"
-performanceSection.TextColor3 = ColorTheme.Accent
-performanceSection.Font = Enum.Font.GothamBold
-performanceSection.TextSize = 16
-performanceSection.TextXAlignment = Enum.TextXAlignment.Left
-performanceSection.Parent = performanceContent
-
-fpsBoostToggleFrame = CreateToggleSwitch("Enable FPS Boost", "Tăng FPS bằng cách giảm chất lượng đồ họa", false, function(enabled)
-    fpsBoostEnabled = enabled
-    if enabled then
-        EnableFPSBoost()
-        mainStatus.Text = "🚀 FPS Boost: Đã bật"
-    else
-        DisableFPSBoost()
-        mainStatus.Text = "⚡ FPS Boost: Đã tắt"
-    end
-end)
-fpsBoostToggleFrame.Parent = performanceContent
-
-whiteScreenToggleFrame = CreateToggleSwitch("Enable White Screen", "Màn hình trắng để giảm lag (chỉ dùng khi cần)", false, function(enabled)
-    whiteScreenEnabled = enabled
-    if enabled then
-        EnableWhiteScreen()
-        mainStatus.Text = "⚪ White Screen: Đã bật"
-    else
-        DisableWhiteScreen()
-        mainStatus.Text = "⚫ White Screen: Đã tắt"
-    end
-end)
-whiteScreenToggleFrame.Parent = performanceContent
-
-local performanceInfo = Instance.new("TextLabel")
-performanceInfo.Size = UDim2.new(1, -20, 0, 60)
-performanceInfo.BackgroundTransparency = 1
-performanceInfo.Text = "💡 Lưu ý:\n• FPS Boost: Giảm chất lượng đồ họa để tăng FPS\n• White Screen: Chỉ dùng khi cần giảm lag tối đa\n• Cả hai tính năng sẽ tự tắt khi reload game"
-performanceInfo.TextColor3 = ColorTheme.TextSecondary
-performanceInfo.Font = Enum.Font.Gotham
-performanceInfo.TextSize = 11
-performanceInfo.TextXAlignment = Enum.TextXAlignment.Left
-performanceInfo.TextYAlignment = Enum.TextYAlignment.Top
-performanceInfo.Parent = performanceContent
 
 -- CONFIG TAB
 local configContent = tabFrames["💾 CONFIG"]
@@ -1869,8 +1728,6 @@ local function ApplyLoadedConfig()
     UpdateToggleButton(autoOpenEggToggleFrame, autoOpenEggEnabled)
     UpdateToggleButton(dungeonToggleFrame, autoFarmDungeonEnabled)
     UpdateToggleButton(autoStatToggleFrame, autoStatEnabled)
-    UpdateToggleButton(fpsBoostToggleFrame, fpsBoostEnabled)
-    UpdateToggleButton(whiteScreenToggleFrame, whiteScreenEnabled)
     UpdateToggleButton(autoJoinDungeonToggleFrame, autoJoinDungeonEnabled)
     UpdateToggleButton(autoJoinRaidToggleFrame, autoJoinRaidEnabled)
     
@@ -1886,22 +1743,16 @@ local function ApplyLoadedConfig()
     if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
     if autoOpenEggEnabled then StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2) end
     if autoFarmDungeonEnabled then 
-        StartLoop("FarmDungeon", FarmDungeonLogic, 0.2) 
+        StartLoop("FarmDungeon", FarmDungeonLogic, 0.3) 
     end
     if autoJoinDungeonEnabled then
-        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 5)
+        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 10)
     end
     if autoJoinRaidEnabled then
-        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 5)
+        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 10)
     end
     if autoStatEnabled then
         StartLoop("AutoStat", AutoStatLogic, 1)
-    end
-    if fpsBoostEnabled then
-        EnableFPSBoost()
-    end
-    if whiteScreenEnabled then
-        EnableWhiteScreen()
     end
     if antiAFKEnabled then EnableAntiAFK() else DisableAntiAFK() end
     
@@ -1971,6 +1822,8 @@ else
     ApplyLoadedConfig()
 end
 
-print("⚡ HIMONO HUB v4.6 - CONFIG FIXED LOADED!")
-print("💾 CONFIG: Dungeon settings now save/load properly")
-print("🏰 DUNGEON: Auto join + Auto farm + Auto return working")
+print("⚡ HIMONO HUB v4.6 - AUTO SYSTEMS FIXED LOADED!")
+print("🎯 FIXED: Auto farm selected enemies")
+print("🏰 FIXED: Auto join/farm dungeon & raid") 
+print("🥚 FIXED: Auto open egg")
+print("⚡ FIXED: All remote functions working")
