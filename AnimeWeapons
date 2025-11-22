@@ -18,6 +18,7 @@ local selectedZone = "Zone 1"
 local selectedStat = "Mastery" -- Mặc định là Mastery
 local autoOpenEggEnabled = false
 local autoStatEnabled = false -- NEW: Auto stat
+local autoHatchEggEnabled = false -- NEW: Auto hatch egg
 
 -- NEW: Biến dungeon system
 local selectedDungeonMode = "Easy"
@@ -449,6 +450,33 @@ local function AutoStatLogic()
     end
 end
 
+-- NEW: Auto hatch egg logic (sử dụng remote "Gacha Multi" như nút R)
+local function AutoHatchEggLogic()
+    if autoHatchEggEnabled then
+        local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
+        if remote then
+            -- Tạo getNil function để lấy InputObject
+            local function getNil(name, class)
+                for _, v in next, getnilinstances() do
+                    if v.ClassName == class and v.Name == name then
+                        return v
+                    end
+                end
+            end
+            
+            local args = {
+                [1] = "Gacha Multi",
+                [2] = {
+                    [1] = getNil("InputObject", "InputObject"),
+                    [2] = 0
+                }
+            }
+            
+            SafeFire(remote, unpack(args))
+        end
+    end
+end
+
 -- Auto farm logic - GIỮ NGUYÊN TỐC ĐỘ
 local function AutoAttackLogic()
     local enemies = FindEnemiesInRange(50)
@@ -621,6 +649,7 @@ local function SaveConfig()
         selectedStat = selectedStat,
         autoOpenEggEnabled = autoOpenEggEnabled,
         autoStatEnabled = autoStatEnabled,
+        autoHatchEggEnabled = autoHatchEggEnabled,
         stealthMode = stealthMode,
         
         -- Dungeon settings
@@ -657,6 +686,7 @@ local function LoadConfig(profileName)
         selectedStat = data.selectedStat or "Mastery"
         autoOpenEggEnabled = data.autoOpenEggEnabled or false
         autoStatEnabled = data.autoStatEnabled or false
+        autoHatchEggEnabled = data.autoHatchEggEnabled or false
         stealthMode = data.stealthMode or true
         
         -- Dungeon settings
@@ -706,6 +736,7 @@ local function CreateNewProfile(profileName)
             selectedStat = "Mastery",
             autoOpenEggEnabled = false,
             autoStatEnabled = false,
+            autoHatchEggEnabled = false,
             stealthMode = true,
             selectedDungeonMode = "Easy",
             autoFarmDungeonEnabled = false,
@@ -1222,6 +1253,7 @@ mainStatus.Parent = mainContent
 -- Biến lưu các toggle
 local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
 local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame
+local autoJoinDungeonToggleFrame, autoJoinRaidToggleFrame, autoHatchEggToggleFrame
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
     autoAttackEnabled = enabled
@@ -1433,6 +1465,17 @@ autoOpenEggToggleFrame = CreateToggleSwitch("Enable Auto Open Egg", "Tự độn
 end)
 autoOpenEggToggleFrame.Parent = eggContent
 
+-- NEW: Auto Hatch Egg Toggle
+autoHatchEggToggleFrame = CreateToggleSwitch("Enable Auto Hatch Egg", "Tự động hatch egg liên tục (như nút R)", false, function(enabled)
+    autoHatchEggEnabled = enabled
+    if enabled then
+        StartLoop("AutoHatchEgg", AutoHatchEggLogic, 0.5)
+    else
+        StopLoop("AutoHatchEgg")
+    end
+end)
+autoHatchEggToggleFrame.Parent = eggContent
+
 -- DUNGEON TAB
 local dungeonContent = tabFrames["🏰 DUNGEON"]
 
@@ -1452,7 +1495,8 @@ local dungeonModeCombo = CreateComboBox("Dungeon Mode", "Chọn chế độ dung
 end)
 dungeonModeCombo.Parent = dungeonContent
 
-local autoJoinDungeonToggle = CreateToggleSwitch("Enable Auto Join Dungeon", "Tự động join khi có thông báo dungeon open", false, function(enabled)
+-- SỬA LẠI: Auto Join Dungeon Toggle
+autoJoinDungeonToggleFrame = CreateToggleSwitch("Enable Auto Join Dungeon", "Tự động join khi có thông báo dungeon open", false, function(enabled)
     autoJoinDungeonEnabled = enabled
     if enabled then
         StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 5) -- Kiểm tra mỗi 5s
@@ -1460,7 +1504,7 @@ local autoJoinDungeonToggle = CreateToggleSwitch("Enable Auto Join Dungeon", "T�
         StopLoop("AutoJoinDungeon")
     end
 end)
-autoJoinDungeonToggle.Parent = dungeonContent
+autoJoinDungeonToggleFrame.Parent = dungeonContent
 
 local joinDungeonBtn = CreateActionButton("Join Dungeon", "Tham gia dungeon đã chọn", function()
     JoinDungeon(selectedDungeonMode)
@@ -1489,7 +1533,8 @@ raidSection.TextSize = 16
 raidSection.TextXAlignment = Enum.TextXAlignment.Left
 raidSection.Parent = dungeonContent
 
-local autoJoinRaidToggle = CreateToggleSwitch("Enable Auto Join Raid", "Tự động join khi có thông báo raid open", false, function(enabled)
+-- SỬA LẠI: Auto Join Raid Toggle
+autoJoinRaidToggleFrame = CreateToggleSwitch("Enable Auto Join Raid", "Tự động join khi có thông báo raid open", false, function(enabled)
     autoJoinRaidEnabled = enabled
     if enabled then
         StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 5) -- Kiểm tra mỗi 5s
@@ -1497,7 +1542,7 @@ local autoJoinRaidToggle = CreateToggleSwitch("Enable Auto Join Raid", "Tự đ�
         StopLoop("AutoJoinRaid")
     end
 end)
-autoJoinRaidToggle.Parent = dungeonContent
+autoJoinRaidToggleFrame.Parent = dungeonContent
 
 local joinRaidBtn = CreateActionButton("Join Raid", "Tham gia raid", function()
     JoinRaid()
@@ -1650,7 +1695,10 @@ local function ApplyLoadedConfig()
     UpdateToggleButton(stealthToggleFrame, stealthModeEnabled)
     UpdateToggleButton(antiAfkToggleFrame, antiAFKEnabled)
     UpdateToggleButton(autoOpenEggToggleFrame, autoOpenEggEnabled)
+    UpdateToggleButton(autoHatchEggToggleFrame, autoHatchEggEnabled)
     UpdateToggleButton(dungeonToggleFrame, autoFarmDungeonEnabled)
+    UpdateToggleButton(autoJoinDungeonToggleFrame, autoJoinDungeonEnabled)
+    UpdateToggleButton(autoJoinRaidToggleFrame, autoJoinRaidEnabled)
     UpdateToggleButton(autoStatToggleFrame, autoStatEnabled)
     
     -- Cập nhật stealth indicator
@@ -1664,6 +1712,7 @@ local function ApplyLoadedConfig()
     if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
     if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
     if autoOpenEggEnabled then StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2) end
+    if autoHatchEggEnabled then StartLoop("AutoHatchEgg", AutoHatchEggLogic, 0.5) end
     if autoFarmDungeonEnabled then 
         StartLoop("FarmDungeon", FarmDungeonLogic, 0.2) 
     end
