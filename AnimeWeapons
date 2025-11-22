@@ -1,5 +1,5 @@
 -- Himono Hub v4.3 - DARK EDITION (MODERN UI / DUNGEON SYSTEM / CONFIG PROFILES) - ANTI-CHEAT OPTIMIZED
--- FINAL MASTER BUILD: Full features, UI rework, Safe Auto Exit Wave/Room with Return-to-Map logic.
+-- FINAL MASTER BUILD + AUTO RANK UP FEATURE
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -20,6 +20,7 @@ local selectedStat = "Mastery"
 local autoOpenEggEnabled = false
 local autoStatEnabled = false
 local autoHatchEggEnabled = false
+local autoRankUpEnabled = false -- NEW: Auto Rank Up Toggle
 
 -- NEW: Biến dungeon system
 local selectedDungeonMode = "Easy"
@@ -124,7 +125,6 @@ end
 
 -- NEW FUNCTION: Đọc Wave/Room từ UI (Dò tìm TextLabel)
 local function ReadWaveFromUI()
-    -- Quét cả CoreGui và PlayerGui để tìm TextLabel chứa số Wave
     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
     local containerServices = {game:GetService("CoreGui"), playerGui}
     
@@ -134,13 +134,11 @@ local function ReadWaveFromUI()
         for _, obj in pairs(service:GetDescendants()) do
             if obj:IsA("TextLabel") or obj:IsA("TextBox") then
                 local text = obj.Text or ""
-                local number = string.match(text, "Wave%s*:?%s*(%d+)") -- Tìm "Wave: [số]"
+                local number = string.match(text, "Wave%s*:?%s*(%d+)")
                 
                 if not number then
-                    -- Thử tìm số chỉ dựa vào nội dung Text (Cần phải cẩn thận)
                     number = string.match(text, "^%s*(%d+)%s*$") 
                     if number and tonumber(number) > 1 and tonumber(number) < 500 then 
-                        -- Kiểm tra tên TextLabel để chắc chắn đây là số Wave/Room
                         if obj.Name:find("Wave") or obj.Name:find("Room") or obj.Name:find("Number") or obj.Name:find("Counter") then
                             return tonumber(number)
                         end
@@ -151,7 +149,7 @@ local function ReadWaveFromUI()
             end
         end
     end
-    return 1 -- Trả về 1 nếu không tìm thấy (giả định Wave 1)
+    return 1 
 end
 
 -- NEW: Hàm kiểm tra thông báo trên màn hình (TỪ V4.4)
@@ -522,6 +520,16 @@ local function FarmRaidLogic()
     end
 end
 
+-- NEW FUNCTION: Auto Rank Up Logic
+local function AutoRankUpLogic()
+    if autoRankUpEnabled then
+        local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
+        if remote then
+            -- Remote log: [1] = "RankUp"
+            SafeFire(remote, "RankUp")
+        end
+    end
+end
 
 -- NEW: Auto stat logic
 local function AutoStatLogic()
@@ -739,6 +747,7 @@ local function SaveConfig()
         autoOpenEggEnabled = autoOpenEggEnabled,
         autoStatEnabled = autoStatEnabled,
         autoHatchEggEnabled = autoHatchEggEnabled,
+        autoRankUpEnabled = autoRankUpEnabled, -- SAVE NEW Toggle
         stealthMode = stealthMode,
         
         -- Dungeon settings
@@ -780,6 +789,7 @@ local function LoadConfig(profileName)
         autoOpenEggEnabled = data.autoOpenEggEnabled or false
         autoStatEnabled = data.autoStatEnabled or false
         autoHatchEggEnabled = data.autoHatchEggEnabled or false
+        autoRankUpEnabled = data.autoRankUpEnabled or false -- LOAD NEW Toggle
         stealthMode = data.stealthMode or true
         
         -- Dungeon settings
@@ -836,6 +846,7 @@ local function CreateNewProfile(profileName)
             autoOpenEggEnabled = false,
             autoStatEnabled = false,
             autoHatchEggEnabled = false,
+            autoRankUpEnabled = false, -- NEW
             stealthMode = true,
             selectedDungeonMode = "Easy",
             autoFarmDungeonEnabled = false,
@@ -1361,7 +1372,7 @@ mainStatus.Parent = mainContent
 -- Biến lưu các toggle
 local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
 local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame, raidFarmToggleFrame
-local autoJoinDungeonToggleFrame, autoJoinRaidToggleFrame, autoHatchEggToggleFrame
+local autoJoinDungeonToggleFrame, autoJoinRaidToggleFrame, autoHatchEggToggleFrame, autoRankUpToggleFrame -- Đã thêm
 local autoStatToggleFrame 
 local autoExitDungeonToggleFrame, autoExitRaidToggleFrame 
 
@@ -1376,6 +1387,12 @@ autoDropsToggleFrame = CreateToggleSwitch("Enable Auto Collect All Drops", "Tự
     if enabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) else StopLoop("AutoCollect") end
 end)
 autoDropsToggleFrame.Parent = mainContent
+
+autoRankUpToggleFrame = CreateToggleSwitch("Enable Auto Rank UP", "Tự động thăng hạng nhân vật (RankUp)", false, function(enabled)
+    autoRankUpEnabled = enabled
+    if enabled then StartLoop("AutoRankUp", AutoRankUpLogic, 5.0) else StopLoop("AutoRankUp") end
+end)
+autoRankUpToggleFrame.Parent = mainContent
 
 -- FARM TAB
 local farmContent = tabFrames["🌾 FARM"]
@@ -1435,7 +1452,7 @@ local refreshGroupsBtn = CreateActionButton("Refresh Enemy Groups", "Quét và h
         infoLabel.Parent = groupFrame
 
         local selectBtn = Instance.new("TextButton")
-        selectBtn.Size = UDim2.new(0.3, 0, 0.6, 0)
+        selectBtn.Size = UDim2.new(0.3, 0, 0, 30)
         selectBtn.Position = UDim2.new(0.65, 0, 0.2, 0)
         selectBtn.BackgroundColor3 = ColorTheme.Accent
         selectBtn.Text = "🎯 CHỌN NHÓM"
@@ -1931,6 +1948,7 @@ local function ApplyLoadedConfig()
     UpdateToggleButton(stealthToggleFrame, stealthModeEnabled)
     UpdateToggleButton(antiAfkToggleFrame, antiAFKEnabled)
     UpdateToggleButton(autoHatchEggToggleFrame, autoHatchEggEnabled)
+    UpdateToggleButton(autoRankUpToggleFrame, autoRankUpEnabled) -- Cập nhật NEW Toggle
     
     -- Cập nhật trạng thái dungeon/raid toggle
     local dungeonFarmToggle = tabFrames["🏰 DUNGEON"]:FindFirstChild("Toggle_EnableAutoFarmDungeon")
@@ -1971,6 +1989,7 @@ local function ApplyLoadedConfig()
     if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
     if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
     if autoHatchEggEnabled then StartLoop("AutoHatchEgg", AutoHatchEggLogic, 0.5) end
+    if autoRankUpEnabled then StartLoop("AutoRankUp", AutoRankUpLogic, 5.0) end -- Kích hoạt NEW Loop
     
     if autoFarmDungeonEnabled then 
         JoinDungeon(selectedDungeonMode) 
