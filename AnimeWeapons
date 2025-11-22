@@ -17,19 +17,16 @@ local selectedEnemyNames = {}
 local selectedGachaType = "Biju"
 local selectedZone = "Zone 1"
 local selectedStat = "Mastery"
-local autoOpenEggEnabled = false
+local autoEggEnabled = false
 local autoStatEnabled = false
 
 -- Biến dungeon system
 local selectedDungeonMode = "Easy"
-local selectedRaidMode = "Raid:1"
 local autoFarmDungeonEnabled = false
 local autoJoinDungeonEnabled = false
 local autoJoinRaidEnabled = false
 local dungeonCompleted = false
 local originalPosition = nil
-local originalZone = nil
-local isInDungeon = false
 local dungeonCheckCount = 0
 
 -- Biến config system
@@ -47,7 +44,6 @@ local antiAFKEnabled = true
 
 -- Config file paths
 local configFolder = "HimonoHub/"
-local configFile = configFolder .. "HimonoHubConfig.txt"
 local profilesFile = configFolder .. "HimonoHubProfiles.txt"
 
 -- Tạo folder nếu chưa tồn tại
@@ -201,11 +197,6 @@ local function CheckIfInDungeonOrRaid()
                 end
             end
         end
-    end
-    
-    -- Kiểm tra lighting (dungeon thường tối)
-    if Lighting.Ambient.r < 0.3 and Lighting.Ambient.g < 0.3 and Lighting.Ambient.b < 0.3 then
-        return true
     end
     
     return false
@@ -513,6 +504,59 @@ local function DistributeStat(statName)
     SafeFireRemote(args)
 end
 
+-- FIXED: EGG SYSTEM với tất cả remote từ file của bạn
+local function StartAutoEgg()
+    local function getNil(name, class)
+        for _, v in next, getnilinstances() do
+            if v.ClassName == class and v.Name == name then
+                return v
+            end
+        end
+        return nil
+    end
+
+    local args = {
+        [1] = "Gacha Auto",
+        [2] = {
+            [1] = getNil("InputObject", "InputObject"),
+            [2] = 0
+        }
+    }
+    
+    SafeFireRemote(args)
+    print("🔮 Đã bắt đầu Auto Egg")
+end
+
+local function StopAutoEgg()
+    local args = {
+        [1] = "Gacha Auto"
+    }
+    SafeFireRemote(args)
+    print("🔮 Đã dừng Auto Egg")
+end
+
+local function OpenMultiEgg()
+    local function getNil(name, class)
+        for _, v in next, getnilinstances() do
+            if v.ClassName == class and v.Name == name then
+                return v
+            end
+        end
+        return nil
+    end
+
+    local args = {
+        [1] = "Gacha Multi",
+        [2] = {
+            [1] = getNil("InputObject", "InputObject"),
+            [2] = 0
+        }
+    }
+    
+    SafeFireRemote(args)
+    print("🥚 Đã mở Multi Egg")
+end
+
 -- NEW: Join dungeon function - FIXED với remote chính xác
 local function JoinDungeon(mode)
     local modeNumber
@@ -574,57 +618,6 @@ local function JoinRaid()
     end
 end
 
--- FIXED: Auto Open Egg với remote chính xác
-local function AutoOpenEggLogic()
-    local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then 
-        return 
-    end
-    
-    -- Hàm getNil
-    local function getNil(name, class)
-        for _, v in next, getnilinstances() do
-            if v.ClassName == class and v.Name == name then
-                return v
-            end
-        end
-        return nil
-    end
-    
-    -- Tìm và mở TẤT CẢ egg trong phạm vi
-    local eggCount = 0
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and (obj.Name:lower():find("egg") or obj.Name:lower():find("crate")) then
-            local rootPart = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head") or obj:FindFirstChild("PrimaryPart")
-            if rootPart then
-                local distance = (character.HumanoidRootPart.Position - rootPart.Position).Magnitude
-                if distance < 20 then
-                    eggCount = eggCount + 1
-                    
-                    -- Dùng remote CHÍNH XÁC từ file của bạn
-                    local args = {
-                        [1] = "Gacha Multi",
-                        [2] = {
-                            [1] = getNil("InputObject", "InputObject"),
-                            [2] = 0
-                        }
-                    }
-                    
-                    SafeFireRemote(args)
-                    print("🥚 Đang mở egg: " .. obj.Name .. " (Khoảng cách: " .. math.floor(distance) .. "m)")
-                    
-                    -- Không break để mở nhiều egg cùng lúc
-                    task.wait(0.5) -- Chờ 0.5s giữa mỗi lần mở
-                end
-            end
-        end
-    end
-    
-    if eggCount > 0 then
-        mainStatus.Text = "🥚 Đang mở " .. eggCount .. " egg..."
-    end
-end
-
 -- NEW: Config Profiles System - FIXED SAVE/LOAD
 local function SaveProfiles()
     local data = {
@@ -654,12 +647,11 @@ local function SaveConfig()
         selectedGachaType = selectedGachaType,
         selectedZone = selectedZone,
         selectedStat = selectedStat,
-        autoOpenEggEnabled = autoOpenEggEnabled,
+        autoEggEnabled = autoEggEnabled,
         autoStatEnabled = autoStatEnabled,
         stealthMode = stealthMode,
         
         selectedDungeonMode = selectedDungeonMode,
-        selectedRaidMode = selectedRaidMode,
         autoFarmDungeonEnabled = autoFarmDungeonEnabled,
         autoJoinDungeonEnabled = autoJoinDungeonEnabled,
         autoJoinRaidEnabled = autoJoinRaidEnabled,
@@ -691,12 +683,11 @@ local function LoadConfig(profileName)
         selectedGachaType = data.selectedGachaType or "Biju"
         selectedZone = data.selectedZone or "Zone 1"
         selectedStat = data.selectedStat or "Mastery"
-        autoOpenEggEnabled = data.autoOpenEggEnabled or false
+        autoEggEnabled = data.autoEggEnabled or false
         autoStatEnabled = data.autoStatEnabled or false
         stealthMode = data.stealthMode or true
         
         selectedDungeonMode = data.selectedDungeonMode or "Easy"
-        selectedRaidMode = data.selectedRaidMode or "Raid:1"
         autoFarmDungeonEnabled = data.autoFarmDungeonEnabled or false
         autoJoinDungeonEnabled = data.autoJoinDungeonEnabled or false
         autoJoinRaidEnabled = data.autoJoinRaidEnabled or false
@@ -751,11 +742,10 @@ local function CreateNewProfile(profileName)
             selectedGachaType = "Biju",
             selectedZone = "Zone 1",
             selectedStat = "Mastery",
-            autoOpenEggEnabled = false,
+            autoEggEnabled = false,
             autoStatEnabled = false,
             stealthMode = true,
             selectedDungeonMode = "Easy",
-            selectedRaidMode = "Raid:1",
             autoFarmDungeonEnabled = false,
             autoJoinDungeonEnabled = false,
             autoJoinRaidEnabled = false,
@@ -1270,7 +1260,7 @@ mainStatus.Parent = mainContent
 
 -- Biến lưu các toggle
 local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
-local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame
+local stealthToggleFrame, antiAfkToggleFrame, autoEggToggleFrame, dungeonToggleFrame
 local autoJoinDungeonToggleFrame, autoJoinRaidToggleFrame
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
@@ -1501,25 +1491,54 @@ local teleportBtn = CreateActionButton("Teleport", "Di chuyển đến khu vực
 end)
 teleportBtn.Parent = teleportContent
 
--- OPEN EGG TAB - FIXED
+-- OPEN EGG TAB - FIXED với tất cả remote
 local eggContent = tabFrames["🥚 OPEN EGG"]
-local openEggBtn = CreateActionButton("Open Egg", "Mở egg gần bạn", function()
-    AutoOpenEggLogic()
-    mainStatus.Text = "🥚 Đang mở egg..."
-end)
-openEggBtn.Parent = eggContent
 
-autoOpenEggToggleFrame = CreateToggleSwitch("Enable Auto Open Egg", "Tự động mở egg LIÊN TỤC khi gần (20m)", false, function(enabled)
-    autoOpenEggEnabled = enabled
+local multiEggBtn = CreateActionButton("Multi Egg (R)", "Mở Multi Egg (Nút R)", function()
+    OpenMultiEgg()
+    mainStatus.Text = "🥚 Đã mở Multi Egg"
+end)
+multiEggBtn.Parent = eggContent
+
+local startAutoEggBtn = CreateActionButton("Start Auto Egg (E)", "Bắt đầu Auto Egg", function()
+    StartAutoEgg()
+    mainStatus.Text = "🔮 Đã bắt đầu Auto Egg"
+end)
+startAutoEggBtn.Parent = eggContent
+
+local stopAutoEggBtn = CreateActionButton("Stop Auto Egg (Q)", "Dừng Auto Egg", function()
+    StopAutoEgg()
+    mainStatus.Text = "🔮 Đã dừng Auto Egg"
+end)
+stopAutoEggBtn.Parent = eggContent
+
+autoEggToggleFrame = CreateToggleSwitch("Enable Auto Egg Loop", "Tự động bật/tắt Auto Egg mỗi 30s", false, function(enabled)
+    autoEggEnabled = enabled
     if enabled then
-        StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2) -- Chạy mỗi 2 giây
-        mainStatus.Text = "🥚 Auto Open Egg: Đã bật - Đang mở egg liên tục!"
+        StartLoop("AutoEggLoop", function()
+            StartAutoEgg()
+            task.wait(25)
+            StopAutoEgg()
+            task.wait(5)
+        end, 30)
+        mainStatus.Text = "🔮 Auto Egg Loop: Đã bật"
     else
-        StopLoop("AutoOpenEgg")
-        mainStatus.Text = "🥚 Auto Open Egg: Đã tắt"
+        StopLoop("AutoEggLoop")
+        StopAutoEgg()
+        mainStatus.Text = "🔮 Auto Egg Loop: Đã tắt"
     end
 end)
-autoOpenEggToggleFrame.Parent = eggContent
+autoEggToggleFrame.Parent = eggContent
+
+local eggInfo = Instance.new("TextLabel")
+eggInfo.Size = UDim2.new(1, -20, 0, 60)
+eggInfo.BackgroundTransparency = 1
+eggInfo.Text = "💡 Hướng dẫn:\n• Multi Egg (R): Mở egg bằng nút R\n• Start Auto Egg (E): Bật auto roll\n• Stop Auto Egg (Q): Tắt auto roll\n• Auto Egg Loop: Tự động bật/tắt mỗi 30s"
+eggInfo.TextColor3 = ColorTheme.TextSecondary
+eggInfo.Font = Enum.Font.Gotham
+eggInfo.TextSize = 11
+eggInfo.TextYAlignment = Enum.TextYAlignment.Top
+eggInfo.Parent = eggContent
 
 -- DUNGEON TAB - FIXED với đầy đủ chức năng
 local dungeonContent = tabFrames["🏰 DUNGEON"]
@@ -1604,9 +1623,9 @@ end)
 joinRaidBtn.Parent = dungeonContent
 
 local dungeonStatus = Instance.new("TextLabel")
-dungeonStatus.Size = UDim2.new(1, -20, 0, 60)
+dungeonStatus.Size = UDim2.new(1, -20, 0, 80)
 dungeonStatus.BackgroundTransparency = 1
-dungeonStatus.Text = "💡 Hướng dẫn:\n• Auto Join: Tự join mỗi 10s khi không trong dungeon/raid\n• Auto Farm: Tự join + farm + về khi hoàn thành\n• Vị trí sẽ được lưu tự động trước khi join"
+dungeonStatus.Text = "💡 Hướng dẫn Dungeon/Raid:\n• Auto Join: Tự join mỗi 10s khi không trong dungeon/raid\n• Auto Farm: Tự join + farm + về khi hoàn thành\n• Vị trí sẽ được lưu tự động trước khi join\n• Hệ thống sẽ tự detect khi vào dungeon/raid"
 dungeonStatus.TextColor3 = ColorTheme.TextSecondary
 dungeonStatus.Font = Enum.Font.Gotham
 dungeonStatus.TextSize = 11
@@ -1789,7 +1808,7 @@ local function ApplyLoadedConfig()
     UpdateToggleButton(autoDropsToggleFrame, autoCollectEnabled)
     UpdateToggleButton(stealthToggleFrame, stealthModeEnabled)
     UpdateToggleButton(antiAfkToggleFrame, antiAFKEnabled)
-    UpdateToggleButton(autoOpenEggToggleFrame, autoOpenEggEnabled)
+    UpdateToggleButton(autoEggToggleFrame, autoEggEnabled)
     UpdateToggleButton(dungeonToggleFrame, autoFarmDungeonEnabled)
     UpdateToggleButton(autoStatToggleFrame, autoStatEnabled)
     UpdateToggleButton(autoJoinDungeonToggleFrame, autoJoinDungeonEnabled)
@@ -1805,7 +1824,14 @@ local function ApplyLoadedConfig()
     if selectedFarmEnabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) end
     if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
     if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
-    if autoOpenEggEnabled then StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2) end
+    if autoEggEnabled then 
+        StartLoop("AutoEggLoop", function()
+            StartAutoEgg()
+            task.wait(25)
+            StopAutoEgg()
+            task.wait(5)
+        end, 30)
+    end
     if autoFarmDungeonEnabled then 
         StartLoop("FarmDungeon", FarmDungeonLogic, 0.3) 
     end
@@ -1890,7 +1916,7 @@ print("⚡ HIMONO HUB v4.6 - COMPLETE FIXED VERSION LOADED!")
 print("🎯 Auto Farm Selected: Hoạt động")
 print("🏰 Dungeon System: Join + Farm + Return hoạt động")
 print("⚔️ Raid System: Join + Farm + Return hoạt động") 
-print("🥚 Auto Open Egg: Hoạt động liên tục")
+print("🥚 Egg System: Multi Egg + Auto Egg hoạt động")
 print("⚡ Auto Stat: Hoạt động")
 print("💰 Auto Collect: Hoạt động")
 print("👻 Stealth Mode: Hoạt động")
