@@ -1,30 +1,18 @@
---[[
-    ⚡ HIMONO HUB v5.2 - DELTA EXECUTOR EDITION
-    ----------------------------------------
-    • Compatibility: Delta / Fluxus / Mobile / PC
-    • Fixes: UI Parent (PlayerGui), Safe FileSystem, Anti-AFK
-]]
+-- Himono Hub v4.6 - REMASTERED (FIXED REMOTE & CONFIG)
+-- Original UI Structure Preserved
 
--- // INIT CHECK // --
-if not game:IsLoaded() then game.Loaded:Wait() end
-
--- // SERVICES // --
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
-local VirtualInputManager = game:GetService("VirtualInputManager") -- Better for Delta
+local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
-
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local VirtualUser = game:GetService("VirtualUser")
 
--- // GLOBAL HELPER // --
+-- [CRITICAL FIX] GLOBAL HELPER FOR EGG
 getgenv().getNil = function(name, class)
-    -- Delta support check
     if getnilinstances then
         for _, v in next, getnilinstances() do
             if v.ClassName == class and v.Name == name then
@@ -35,371 +23,894 @@ getgenv().getNil = function(name, class)
     return nil
 end
 
--- // VARIABLES & SETTINGS // --
-local FileName = "HimonoHub_Delta_Config.json"
-local ProfileName = "default"
+-- Biến Trạng Thái Cốt Lõi
+local stealthMode = true
+local safeConnections = {}
+local activeLoops = {}
+local selectedEnemyNames = {}
+local selectedGachaType = "Biju"
+local selectedZone = "Zone 1"
+local selectedStat = "Mastery"
+local autoEggEnabled = false
+local autoStatEnabled = false
 
-local Settings = {
-    AutoFarm = false,
-    AutoAttack = false,
-    AutoCollect = false,
-    StealthMode = true,
-    AntiAFK = true,
-    SelectedMobs = {},
-    FarmMethod = "Behind",
-    Distance = 5,
-    AutoJoinDungeon = false,
-    AutoJoinRaid = false,
-    AutoFarmDungeon = false,
-    DungeonMode = "Easy",
-    AutoEgg = false,
-    AutoMultiEgg = false,
-    AutoRoll = false,
-    SelectedGacha = "Biju",
-    AutoStats = false,
-    SelectedStat = "Mastery",
-    FPSBoost = false,
-    WhiteScreen = false
+-- Biến dungeon system
+local selectedDungeonMode = "Easy"
+local autoFarmDungeonEnabled = false
+local autoJoinDungeonEnabled = false
+local autoJoinRaidEnabled = false
+local dungeonCompleted = false
+local originalPosition = nil
+local dungeonCheckCount = 0
+
+-- Biến config system
+local configProfiles = {}
+local selectedConfigProfile = "default"
+local autoLoadProfile = ""
+
+-- Biến theo dõi trạng thái các toggle để lưu/tải
+local selectedFarmEnabled = false
+local autoAttackEnabled = false
+local farmRandomEnabled = false
+local autoCollectEnabled = false
+local stealthModeEnabled = true
+local antiAFKEnabled = true
+
+-- Config file paths
+local configFolder = "HimonoHub/"
+local profilesFile = configFolder .. "HimonoHubProfiles.txt"
+
+if not isfolder("HimonoHub") then makefolder("HimonoHub") end
+
+-- Màu sắc theme (Dark Modern)
+local ColorTheme = {
+    Background = Color3.fromRGB(15, 15, 20),
+    Secondary = Color3.fromRGB(25, 25, 35),
+    Accent = Color3.fromRGB(0, 150, 255),
+    AccentHover = Color3.fromRGB(0, 170, 255),
+    Text = Color3.fromRGB(240, 240, 240),
+    TextSecondary = Color3.fromRGB(180, 180, 200),
+    Success = Color3.fromRGB(0, 200, 100),
+    Danger = Color3.fromRGB(220, 60, 60),
+    Warning = Color3.fromRGB(255, 180, 0)
 }
 
-local State = {
-    OriginalPos = nil,
-    IsInDungeon = false,
-    WasInDungeon = false
-}
-
--- // NOTIFICATION SYSTEM // --
-local function Notify(msg)
-    print("[HIMONO]: " .. msg)
-    -- Simple notification compatible with mobile
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "Himono Hub",
-        Text = msg,
-        Duration = 3
-    })
+-- [FIXED] Safe Remote Fire
+local function SafeFireRemote(args)
+    if stealthMode then RunService.Heartbeat:Wait() end
+    
+    local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
+    if remote then
+        remote:FireServer(unpack(args))
+    else
+        pcall(function()
+            game:GetService("ReplicatedStorage").Reply.Reliable:FireServer(unpack(args))
+        end)
+    end
 end
 
--- // CONFIG SYSTEM (SAFE MODE) // --
-local ConfigData = { Profiles = {} }
+local function SafeWait()
+    if not stealthMode then task.wait(); return end
+    math.randomseed(tick())
+    local delay = math.random(20, 50) / 100
+    local start = tick()
+    while tick() - start < delay do RunService.Heartbeat:Wait() end
+end
 
-local function SaveSystem()
-    pcall(function()
-        ConfigData.Profiles[ProfileName] = Settings
-        writefile(FileName, HttpService:JSONEncode(ConfigData))
-        Notify("Config Saved: " .. ProfileName)
+local function SafeCall(func, ...)
+    local success, result = pcall(func, ...)
+    return success and result or nil
+end
+
+local function SafeConnect(signal, callback)
+    local conn = signal:Connect(function(...)
+        if stealthMode then SafeWait() end
+        SafeCall(callback, ...)
+    end)
+    table.insert(safeConnections, conn)
+    return conn
+end
+
+local function StartLoop(name, func, interval)
+    if activeLoops[name] then activeLoops[name] = false; task.wait(0.1) end
+    activeLoops[name] = true
+    task.spawn(function()
+        while activeLoops[name] do
+            pcall(func)
+            if interval then task.wait(interval) else RunService.Heartbeat:Wait() end
+        end
     end)
 end
 
-local function LoadSystem()
-    pcall(function()
-        if isfile(FileName) then
-            local result = HttpService:JSONDecode(readfile(FileName))
-            if result then
-                ConfigData = result
-                if ConfigData.Profiles[ProfileName] then
-                    for k,v in pairs(ConfigData.Profiles[ProfileName]) do
-                        Settings[k] = v
+local function StopLoop(name)
+    if activeLoops[name] then activeLoops[name] = false end
+end
+
+-- Anti-AFK
+local antiAFKConnection
+local function EnableAntiAFK()
+    if antiAFKConnection then antiAFKConnection:Disconnect() end
+    antiAFKConnection = LocalPlayer.Idled:Connect(function()
+        SafeCall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
+    end)
+end
+
+local function DisableAntiAFK()
+    if antiAFKConnection then
+        antiAFKConnection:Disconnect()
+        antiAFKConnection = nil
+    end
+end
+
+-- Enemy Detection
+local function FindEnemiesInRange(range)
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return {} end
+    local enemies = {}
+    local playerPos = character.HumanoidRootPart.Position
+    
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj.Humanoid.Health > 0 then
+            local rootPart = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head")
+            if rootPart then
+                local isPlayer = false
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player.Character == obj then isPlayer = true; break end
+                end
+                if not isPlayer then
+                    local distance = (playerPos - rootPart.Position).Magnitude
+                    if distance <= (range or 100) then
+                        table.insert(enemies, {
+                            Model = obj,
+                            Name = obj.Name,
+                            Position = rootPart.Position,
+                            Distance = distance,
+                            Health = obj.Humanoid.Health,
+                            MaxHealth = obj.Humanoid.MaxHealth
+                        })
                     end
-                    Notify("Config Loaded: " .. ProfileName)
                 end
             end
         end
-    end)
+    end
+    table.sort(enemies, function(a, b) return a.Distance < b.Distance end)
+    return enemies
 end
 
--- // REMOTE SYSTEM // --
-local function FireRemote(args)
-    if Settings.StealthMode then 
-        if math.random(1, 15) == 1 then task.wait(0.1) end
+local function CheckIfInDungeonOrRaid()
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return false end
+    if workspace:FindFirstChild("Map") then
+        local mapName = workspace.Map.Name:lower()
+        if mapName:find("dungeon") or mapName:find("raid") or mapName:find("boss") then
+            return true
+        end
     end
+    return false
+end
+
+local function FindDungeonEnemies(range)
+    if not CheckIfInDungeonOrRaid() then return {} end
+    return FindEnemiesInRange(range or 100)
+end
+
+local function GetEnemyGroups()
+    local enemies = FindEnemiesInRange(200)
+    local groups = {}
+    for _, enemy in ipairs(enemies) do
+        if not groups[enemy.Name] then
+            groups[enemy.Name] = { name = enemy.Name, count = 0, nearestDistance = math.huge }
+        end
+        groups[enemy.Name].count = groups[enemy.Name].count + 1
+        if enemy.Distance < groups[enemy.Name].nearestDistance then
+            groups[enemy.Name].nearestDistance = enemy.Distance
+        end
+    end
+    return groups
+end
+
+local function SaveCurrentPosition()
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        originalPosition = character.HumanoidRootPart.Position
+    end
+end
+
+local function ReturnToOriginalPosition()
+    if originalPosition then
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            character.HumanoidRootPart.CFrame = CFrame.new(originalPosition)
+            originalPosition = nil
+        end
+    end
+end
+
+local function CheckDungeonCompleted()
+    local enemies = FindDungeonEnemies(200)
+    return #enemies == 0
+end
+
+-- [FIXED] Farm Logic
+local function FarmSelectedLogic()
+    if #selectedEnemyNames == 0 then return end
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
     
-    local Remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-    if Remote then
-        Remote:FireServer(unpack(args))
-    else
-        -- Fallback
-        pcall(function() ReplicatedStorage.Reply.Reliable:FireServer(unpack(args)) end)
-    end
-end
-
--- // LOGIC FUNCTIONS // --
-
-local function UpdatePerformance()
-    if Settings.FPSBoost then
-        settings().Rendering.QualityLevel = 1
-        Lighting.GlobalShadows = false
-    else
-        settings().Rendering.QualityLevel = 10
-        Lighting.GlobalShadows = true
-    end
-    game:GetService("RunService"):Set3dRenderingEnabled(not Settings.WhiteScreen)
-end
-
-local function CheckDungeonState()
-    local nowInDungeon = false
-    if Workspace:FindFirstChild("Map") then
-        local n = Workspace.Map.Name:lower()
-        if n:find("dungeon") or n:find("raid") or n:find("boss") then nowInDungeon = true end
-    end
-    
-    if State.WasInDungeon and not nowInDungeon then
-        if State.OriginalPos and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            task.wait(1)
-            LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(State.OriginalPos)
-            Notify("Returned to Start")
-            State.OriginalPos = nil
-        end
-    end
-    State.WasInDungeon = nowInDungeon
-    State.IsInDungeon = nowInDungeon
-end
-
-local function DungeonLoop()
-    CheckDungeonState()
-    if not State.IsInDungeon then
-        if Settings.AutoJoinDungeon or Settings.AutoJoinRaid then
-            if not State.OriginalPos and LocalPlayer.Character then 
-                State.OriginalPos = LocalPlayer.Character.HumanoidRootPart.Position 
-            end
-        end
-        
-        if Settings.AutoJoinDungeon then
-            local m = "1"
-            if Settings.DungeonMode == "Medium" then m = "2" end
-            if Settings.DungeonMode == "Hard" then m = "3" end
-            FireRemote({[1] = "Join Gamemode", [2] = {[1] = "Dungeon:"..m}})
-        end
-        
-        if Settings.AutoJoinRaid then
-            FireRemote({[1] = "Join Gamemode", [2] = {[1] = "Raid:1"}})
-        end
-    end
-end
-
-local function FarmLoop()
-    if not Settings.AutoFarm and not (Settings.AutoFarmDungeon and State.IsInDungeon) then return end
-    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
-    
-    local target = nil
-    for _, v in pairs(Workspace:GetDescendants()) do
-        if v:IsA("Model") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 and not Players:GetPlayerFromCharacter(v) then
-            if State.IsInDungeon and Settings.AutoFarmDungeon then
-                target = v
-                break
-            elseif Settings.AutoFarm and table.find(Settings.SelectedMobs, v.Name) then
-                target = v
+    local enemies = FindEnemiesInRange(200)
+    local targets = {}
+    for _, enemy in ipairs(enemies) do
+        for _, selectedName in ipairs(selectedEnemyNames) do
+            if enemy.Name == selectedName then
+                table.insert(targets, enemy)
                 break
             end
         end
     end
     
-    if target and target:FindFirstChild("HumanoidRootPart") then
-        local HRP = LocalPlayer.Character.HumanoidRootPart
-        local TPPos = target.HumanoidRootPart.Position
-        
-        if Settings.FarmMethod == "Over" then TPPos = TPPos + Vector3.new(0, Settings.Distance, 0) end
-        if Settings.FarmMethod == "Under" then TPPos = TPPos - Vector3.new(0, Settings.Distance, 0) end
-        if Settings.FarmMethod == "Behind" then TPPos = TPPos + (target.HumanoidRootPart.CFrame.LookVector * -Settings.Distance) end
-        
-        HRP.CFrame = CFrame.new(TPPos, target.HumanoidRootPart.Position)
-        
-        -- Attack
-        FireRemote({[1] = "Settings", [2] = {[1] = "AutoClick", [2] = true}})
-        FireRemote({[1] = "Attack", [2] = target})
+    table.sort(targets, function(a, b) return a.Distance < b.Distance end)
+    
+    for _, target in ipairs(targets) do
+        if not activeLoops["FarmSelected"] then break end
+        if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
+            local offset = Vector3.new(math.random(-5, 5), 3, math.random(-5, 5))
+            character.HumanoidRootPart.CFrame = CFrame.new(target.Position + offset)
+            
+            [cite_start]-- Auto Click Settings Remote [cite: 32]
+            SafeFireRemote({[1] = "Settings", [2] = {[1] = "AutoClick", [2] = true}})
+            SafeFireRemote({[1] = "Attack", [2] = target.Model})
+            task.wait(0.1)
+        end
+        if not activeLoops["FarmSelected"] then break end
+        task.wait(0.1)
     end
 end
 
-local function MiscLoop()
-    if Settings.AutoEgg then
-        local inp = getNil("InputObject", "InputObject")
-        if inp then
-            FireRemote({[1] = "Gacha Auto", [2] = {[1] = inp, [2] = 0}})
-            if Settings.AutoMultiEgg then FireRemote({[1] = "Gacha Multi", [2] = {[1] = inp, [2] = 0}}) end
+-- [FIXED] Dungeon Farm
+local function FarmDungeonLogic()
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    
+    if not CheckIfInDungeonOrRaid() then
+        dungeonCheckCount = dungeonCheckCount + 1
+        if dungeonCheckCount >= 10 then
+            ReturnToOriginalPosition()
+            StopLoop("FarmDungeon")
+            autoFarmDungeonEnabled = false
+            if dungeonToggleFrame then UpdateToggleButton(dungeonToggleFrame, false) end
+            return
+        end
+    else
+        dungeonCheckCount = 0
+    end
+    
+    local enemies = FindDungeonEnemies(100)
+    if #enemies > 0 then
+        for _, enemy in ipairs(enemies) do
+            if not activeLoops["FarmDungeon"] then break end
+            if enemy.Model and enemy.Model:FindFirstChild("Humanoid") and enemy.Model.Humanoid.Health > 0 then
+                local offset = Vector3.new(math.random(-3, 3), 2, math.random(-3, 3))
+                character.HumanoidRootPart.CFrame = CFrame.new(enemy.Position + offset)
+                SafeFireRemote({[1] = "Settings", [2] = {[1] = "AutoClick", [2] = true}})
+                SafeFireRemote({[1] = "Attack", [2] = enemy.Model})
+                task.wait(0.1)
+            end
+        end
+    else
+        if CheckDungeonCompleted() then
+            task.wait(3)
+            ReturnToOriginalPosition()
+            StopLoop("FarmDungeon")
+            autoFarmDungeonEnabled = false
+            if dungeonToggleFrame then UpdateToggleButton(dungeonToggleFrame, false) end
         end
     end
-    if Settings.AutoRoll then
-        FireRemote({[1] = "Crate Roll Start", [2] = {[1] = Settings.SelectedGacha, [2] = true}})
-        task.wait(1.5)
-        FireRemote({[1] = "Crate Roll Stop"})
+end
+
+-- [FIXED] Join Dungeon
+local function JoinDungeon(mode)
+    local modeNumber = "1"
+    if mode == "Medium" then modeNumber = "2" elseif mode == "Hard" then modeNumber = "3" end
+    [cite_start]-- [cite: 8]
+    SafeFireRemote({[1] = "Join Gamemode", [2] = {[1] = "Dungeon:" .. modeNumber}})
+    dungeonCompleted = false
+    dungeonCheckCount = 0
+    
+    if autoFarmDungeonEnabled then
+        task.wait(5)
+        StartLoop("FarmDungeon", FarmDungeonLogic, 0.3)
     end
-    if Settings.AutoStats then
-        FireRemote({[1] = "Distribute Stat Point", [2] = {[1] = Settings.SelectedStat}})
+end
+
+local function JoinRaid()
+    SafeFireRemote({[1] = "Join Gamemode", [2] = {[1] = "Raid:1"}})
+    dungeonCompleted = false
+    dungeonCheckCount = 0
+    if autoFarmDungeonEnabled then
+        task.wait(5)
+        StartLoop("FarmDungeon", FarmDungeonLogic, 0.3)
     end
 end
 
-local function Teleport(zone)
-    local map = "Dungeon"
-    if zone == "Zone 2" then map = "Naruto" end
-    if zone == "Zone 3" then map = "DragonBall" end
-    if zone == "Zone 4" then map = "OnePiece" end
-    if zone == "Zone 5" then map = "DemonSlayer" end
-    FireRemote({[1] = "Zone Teleport", [2] = {[1] = map}})
+local function AutoJoinDungeonLogic()
+    if autoJoinDungeonEnabled and not CheckIfInDungeonOrRaid() then
+        SaveCurrentPosition()
+        JoinDungeon(selectedDungeonMode)
+        task.wait(10)
+    end
 end
 
--- // DELTA COMPATIBLE UI // --
-local Library = {}
-local UIVars = {
-    Colors = { Main = Color3.fromRGB(18,18,22), Sec = Color3.fromRGB(25,25,30), Accent = Color3.fromRGB(0,140,255), Text = Color3.fromRGB(255,255,255) }
-}
+local function AutoJoinRaidLogic()
+    if autoJoinRaidEnabled and not CheckIfInDungeonOrRaid() then
+        SaveCurrentPosition()
+        JoinRaid()
+        task.wait(10)
+    end
+end
 
-function Library:Init(title)
-    -- Use PlayerGui for Delta Compatibility
-    local GUI = Instance.new("ScreenGui")
-    GUI.Name = "HimonoDelta"
-    GUI.Parent = PlayerGui 
-    GUI.ResetOnSpawn = false
+-- [FIXED] Auto Stats
+local function AutoStatLogic()
+    if autoStatEnabled then
+        [cite_start]-- [cite: 7]
+        SafeFireRemote({[1] = "Distribute Stat Point", [2] = {[1] = selectedStat}})
+    end
+end
+
+-- [FIXED] Auto Attack
+local function AutoAttackLogic()
+    local enemies = FindEnemiesInRange(50)
+    if #enemies > 0 then
+        local nearestEnemy = enemies[1]
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + Vector3.new(0,3,0))
+            SafeFireRemote({[1] = "Settings", [2] = {[1] = "AutoClick", [2] = true}})
+            SafeFireRemote({[1] = "Attack", [2] = nearestEnemy.Model})
+        end
+    end
+end
+
+local function FarmRandomLogic()
+    local enemies = FindEnemiesInRange(50)
+    if #enemies > 0 then
+        local randomEnemy = enemies[math.random(1, #enemies)]
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            character.HumanoidRootPart.CFrame = CFrame.new(randomEnemy.Position + Vector3.new(0,3,0))
+            SafeFireRemote({[1] = "Settings", [2] = {[1] = "AutoClick", [2] = true}})
+            SafeFireRemote({[1] = "Attack", [2] = randomEnemy.Model})
+        end
+    end
+end
+
+local function AutoCollectLogic()
+    local character = LocalPlayer.Character
+    if not character then return end
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Part") and (obj.Name:lower():find("drop") or obj.Name:lower():find("coin") or obj.Name:lower():find("reward")) then
+            local distance = (character.HumanoidRootPart.Position - obj.Position).Magnitude
+            if distance < 20 then
+                SafeFireRemote({[1] = "Collect", [2] = obj})
+            end
+        end
+    end
+end
+
+-- [FIXED] Gacha & Teleport
+local function StartGacha(gachaType)
+    SafeFireRemote({[1] = "Crate Roll Start", [2] = {[1] = gachaType, [2] = true}})
+end
+
+local function StopGacha()
+    SafeFireRemote({[1] = "Crate Roll Stop"})
+end
+
+local function TeleportToZone(zoneName)
+    local actualZone = "Dungeon"
+    if zoneName == "Zone 2" then actualZone = "Naruto" end
+    if zoneName == "Zone 3" then actualZone = "DragonBall" end
+    if zoneName == "Zone 4" then actualZone = "OnePiece" end
+    if zoneName == "Zone 5" then actualZone = "DemonSlayer" end
     
-    -- Toggle Button (Mini)
-    local ToggleBtn = Instance.new("TextButton")
-    ToggleBtn.Name = "ToggleUI"
-    ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
-    ToggleBtn.Position = UDim2.new(0.8, 0, 0.1, 0)
-    ToggleBtn.BackgroundColor3 = UIVars.Colors.Accent
-    ToggleBtn.Text = "H"
-    ToggleBtn.TextColor3 = UIVars.Colors.Text
-    ToggleBtn.Font = Enum.Font.GothamBold
-    ToggleBtn.TextSize = 20
-    ToggleBtn.Parent = GUI
-    Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1,0)
+    SafeFireRemote({[1] = "Zone Teleport", [2] = {[1] = actualZone}})
+end
+
+-- [FIXED] Auto Egg (Using getNil)
+local function StartAutoEgg()
+    local input = getNil("InputObject", "InputObject")
+    if input then
+        SafeFireRemote({[1] = "Gacha Auto", [2] = {[1] = input, [2] = 0}})
+    end
+end
+
+local function StopAutoEgg()
+    SafeFireRemote({[1] = "Gacha Auto"})
+end
+
+local function OpenMultiEgg()
+    local input = getNil("InputObject", "InputObject")
+    if input then
+        SafeFireRemote({[1] = "Gacha Multi", [2] = {[1] = input, [2] = 0}})
+    end
+end
+
+-- Config System (Preserved)
+local function SaveProfiles()
+    local data = { profiles = configProfiles, autoLoadProfile = autoLoadProfile }
+    writefile(profilesFile, HttpService:JSONEncode(data))
+end
+
+local function LoadProfiles()
+    if isfile(profilesFile) then
+        pcall(function()
+            local data = HttpService:JSONDecode(readfile(profilesFile))
+            configProfiles = data.profiles or {}
+            autoLoadProfile = data.autoLoadProfile or ""
+        end)
+    end
+end
+
+local function SaveConfig()
+    local data = {
+        selectedEnemyNames = selectedEnemyNames,
+        selectedGachaType = selectedGachaType,
+        selectedZone = selectedZone,
+        selectedStat = selectedStat,
+        autoEggEnabled = autoEggEnabled,
+        autoStatEnabled = autoStatEnabled,
+        stealthMode = stealthMode,
+        selectedDungeonMode = selectedDungeonMode,
+        autoFarmDungeonEnabled = autoFarmDungeonEnabled,
+        autoJoinDungeonEnabled = autoJoinDungeonEnabled,
+        autoJoinRaidEnabled = autoJoinRaidEnabled,
+        selectedFarmEnabled = activeLoops["FarmSelected"] or false,
+        autoAttackEnabled = activeLoops["AutoAttack"] or false,
+        farmRandomEnabled = activeLoops["FarmRandom"] or false,
+        autoCollectEnabled = activeLoops["AutoCollect"] or false,
+        stealthModeEnabled = stealthMode,
+        antiAFKEnabled = antiAFKEnabled
+    }
+    configProfiles[selectedConfigProfile] = data
+    SaveProfiles()
+end
+
+local function LoadConfig(profileName)
+    if not profileName then profileName = selectedConfigProfile end
+    if configProfiles[profileName] then
+        local data = configProfiles[profileName]
+        selectedEnemyNames = data.selectedEnemyNames or {}
+        selectedGachaType = data.selectedGachaType or "Biju"
+        selectedZone = data.selectedZone or "Zone 1"
+        selectedStat = data.selectedStat or "Mastery"
+        autoEggEnabled = data.autoEggEnabled or false
+        autoStatEnabled = data.autoStatEnabled or false
+        stealthMode = data.stealthMode or true
+        selectedDungeonMode = data.selectedDungeonMode or "Easy"
+        autoFarmDungeonEnabled = data.autoFarmDungeonEnabled or false
+        autoJoinDungeonEnabled = data.autoJoinDungeonEnabled or false
+        autoJoinRaidEnabled = data.autoJoinRaidEnabled or false
+        selectedFarmEnabled = data.selectedFarmEnabled or false
+        autoAttackEnabled = data.autoAttackEnabled or false
+        farmRandomEnabled = data.farmRandomEnabled or false
+        autoCollectEnabled = data.autoCollectEnabled or false
+        stealthModeEnabled = data.stealthModeEnabled or true
+        antiAFKEnabled = data.antiAFKEnabled or true
+        return true
+    end
+    return false
+end
+
+local function CreateNewProfile(profileName)
+    if not profileName or profileName == "" then return false end
+    if not configProfiles[profileName] then
+        configProfiles[profileName] = {
+            selectedEnemyNames = {},
+            selectedGachaType = "Biju",
+            selectedZone = "Zone 1",
+            selectedStat = "Mastery",
+            autoEggEnabled = false,
+            autoStatEnabled = false,
+            stealthMode = true,
+            selectedDungeonMode = "Easy",
+            autoFarmDungeonEnabled = false,
+            autoJoinDungeonEnabled = false,
+            autoJoinRaidEnabled = false,
+            selectedFarmEnabled = false,
+            autoAttackEnabled = false,
+            farmRandomEnabled = false,
+            autoCollectEnabled = false,
+            stealthModeEnabled = true,
+            antiAFKEnabled = true
+        }
+        SaveProfiles()
+        return true
+    end
+    return false
+end
+
+local function SetAutoLoadProfile(profileName)
+    if configProfiles[profileName] then
+        autoLoadProfile = profileName
+        SaveProfiles()
+        return true
+    end
+    return false
+end
+
+-- GUI Initialization (Original Manual Style)
+local HimonoHub = Instance.new("ScreenGui")
+HimonoHub.Name = "HimonoHubRemastered"
+HimonoHub.ResetOnSpawn = false
+HimonoHub.Parent = game.CoreGui
+HimonoHub.Enabled = true
+
+local MainContainer = Instance.new("Frame")
+MainContainer.Size = UDim2.new(0, 700, 0, 650)
+MainContainer.Position = UDim2.new(0.5, -350, 0.5, -325)
+MainContainer.BackgroundColor3 = ColorTheme.Background
+MainContainer.BorderSizePixel = 0
+MainContainer.Parent = HimonoHub
+Instance.new("UICorner", MainContainer).CornerRadius = UDim.new(0.03, 0)
+Instance.new("UIStroke", MainContainer).Color = Color3.fromRGB(40, 40, 50)
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 50)
+TitleBar.BackgroundColor3 = ColorTheme.Secondary
+TitleBar.Parent = MainContainer
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0.03, 0)
+
+local Title = Instance.new("TextLabel")
+Title.Text = "⚡ HIMONO HUB v4.6 - REMASTERED"
+Title.TextColor3 = ColorTheme.Text
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.Size = UDim2.new(1, -100, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.BackgroundTransparency = 1
+Title.Parent = TitleBar
+
+local HideButton = Instance.new("TextButton")
+HideButton.Text = "-"
+HideButton.Size = UDim2.new(0, 30, 0, 30)
+HideButton.Position = UDim2.new(1, -35, 0.5, -15)
+HideButton.BackgroundColor3 = ColorTheme.Accent
+HideButton.TextColor3 = ColorTheme.Text
+HideButton.Parent = TitleBar
+Instance.new("UICorner", HideButton).CornerRadius = UDim.new(0.2, 0)
+HideButton.MouseButton1Click:Connect(function() HimonoHub.Enabled = false end)
+
+local TabContainer = Instance.new("ScrollingFrame")
+TabContainer.Size = UDim2.new(1, -20, 0, 40)
+TabContainer.Position = UDim2.new(0, 10, 0, 60)
+TabContainer.BackgroundTransparency = 1
+TabContainer.Parent = MainContainer
+local TabListLayout = Instance.new("UIListLayout")
+TabListLayout.FillDirection = Enum.FillDirection.Horizontal
+TabListLayout.Padding = UDim.new(0, 8)
+TabListLayout.Parent = TabContainer
+
+local ContentContainer = Instance.new("Frame")
+ContentContainer.Size = UDim2.new(1, -20, 1, -120)
+ContentContainer.Position = UDim2.new(0, 10, 0, 110)
+ContentContainer.BackgroundColor3 = ColorTheme.Secondary
+ContentContainer.Parent = MainContainer
+Instance.new("UICorner", ContentContainer)
+
+local ContentScroll = Instance.new("ScrollingFrame")
+ContentScroll.Size = UDim2.new(1, 0, 1, 0)
+ContentScroll.BackgroundTransparency = 1
+ContentScroll.Parent = ContentContainer
+local ContentLayout = Instance.new("UIListLayout")
+ContentLayout.Padding = UDim.new(0, 15)
+ContentLayout.Parent = ContentScroll
+
+local tabs = {"🏠 MAIN", "🌾 FARM", "🎰 GACHA", "⚡ STATS", "🚀 TELEPORT", "🥚 OPEN EGG", "🏰 DUNGEON", "💾 CONFIG"}
+local tabFrames, tabButtons = {}, {}
+
+for i, tabName in pairs(tabs) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 120, 1, 0)
+    btn.Text = tabName
+    btn.BackgroundColor3 = i == 1 and ColorTheme.Accent or Color3.fromRGB(40, 40, 50)
+    btn.TextColor3 = ColorTheme.Text
+    btn.Parent = TabContainer
+    Instance.new("UICorner", btn)
     
-    local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 500, 0, 350)
-    Main.Position = UDim2.new(0.5, -250, 0.5, -175)
-    Main.BackgroundColor3 = UIVars.Colors.Main
-    Main.Parent = GUI
-    Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 6)
+    local frame = Instance.new("ScrollingFrame")
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundTransparency = 1
+    frame.Visible = i == 1
+    frame.Parent = ContentScroll
+    Instance.new("UIListLayout", frame).Padding = UDim.new(0, 10)
     
-    -- Drag
-    local dragging, dragStart, startPos
-    Main.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; dragStart=i.Position; startPos=Main.Position end end)
-    Main.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
-    UserInputService.InputChanged:Connect(function(i) if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then local d=i.Position-dragStart; Main.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y) end end)
-
-    ToggleBtn.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
-
-    local Top = Instance.new("Frame")
-    Top.Size = UDim2.new(1,0,0,30); Top.BackgroundColor3 = UIVars.Colors.Sec; Top.Parent = Main
-    Instance.new("UICorner", Top).CornerRadius = UDim.new(0,6)
-    local Txt = Instance.new("TextLabel"); Txt.Text=title; Txt.Size=UDim2.new(1,-10,1,0); Txt.Position=UDim2.new(0,10,0,0); Txt.BackgroundTransparency=1; Txt.TextColor3=UIVars.Colors.Text; Txt.Font=Enum.Font.GothamBold; Txt.TextXAlignment=Enum.TextXAlignment.Left; Txt.Parent=Top
-
-    local TabC = Instance.new("ScrollingFrame"); TabC.Size=UDim2.new(0,100,1,-35); TabC.Position=UDim2.new(0,5,0,35); TabC.BackgroundTransparency=1; TabC.Parent=Main
-    Instance.new("UIListLayout", TabC).Padding = UDim.new(0,5)
-    local PageC = Instance.new("Frame"); PageC.Size=UDim2.new(1,-115,1,-35); PageC.Position=UDim2.new(0,110,0,35); PageC.BackgroundColor3=UIVars.Colors.Sec; PageC.Parent=Main
-    Instance.new("UICorner", PageC).CornerRadius = UDim.new(0,4)
-
-    return {TabC=TabC, PageC=PageC}
-end
-
-function Library:Tab(win, name)
-    local Btn = Instance.new("TextButton")
-    Btn.Size=UDim2.new(1,-5,0,25); Btn.BackgroundColor3=UIVars.Colors.Sec; Btn.Text=name; Btn.TextColor3=UIVars.Colors.Text; Btn.Font=Enum.Font.GothamBold; Btn.TextSize=11; Btn.Parent=win.TabC
-    Instance.new("UICorner", Btn).CornerRadius=UDim.new(0,4)
-    local Page = Instance.new("ScrollingFrame"); Page.Size=UDim2.new(1,-10,1,-10); Page.Position=UDim2.new(0,5,0,5); Page.BackgroundTransparency=1; Page.Visible=false; Page.Parent=win.PageC
-    local L = Instance.new("UIListLayout"); L.Padding=UDim.new(0,5); L.Parent=Page
-    L:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() Page.CanvasSize=UDim2.new(0,0,0,L.AbsoluteContentSize.Y+10) end)
-    Btn.MouseButton1Click:Connect(function()
-        for _,v in pairs(win.TabC:GetChildren()) do if v:IsA("TextButton") then v.BackgroundColor3=UIVars.Colors.Sec end end
-        for _,v in pairs(win.PageC:GetChildren()) do v.Visible=false end
-        Btn.BackgroundColor3=UIVars.Colors.Accent; Page.Visible=true
-    end)
-    return Page
-end
-
-function Library:Toggle(page, text, flag, callback)
-    local B = Instance.new("TextButton"); B.Size=UDim2.new(1,0,0,30); B.BackgroundColor3=Color3.fromRGB(35,35,40); B.Text="  "..text; B.TextColor3=UIVars.Colors.Text; B.Font=Enum.Font.Gotham; B.TextSize=11; B.TextXAlignment=Enum.TextXAlignment.Left; B.Parent=page
-    Instance.new("UICorner", B).CornerRadius=UDim.new(0,4)
-    local I = Instance.new("Frame"); I.Size=UDim2.new(0,8,0,8); I.Position=UDim2.new(1,-15,0.5,-4); I.Parent=B; Instance.new("UICorner", I).CornerRadius=UDim.new(1,0)
-    local function Update() I.BackgroundColor3 = Settings[flag] and UIVars.Colors.Accent or UIVars.Colors.Danger end
-    Update()
-    B.MouseButton1Click:Connect(function() Settings[flag]=not Settings[flag]; Update(); if callback then callback(Settings[flag]) end SaveSystem() end)
-end
-
-function Library:Dropdown(page, text, list, flag, callback)
-    local B = Instance.new("TextButton"); B.Size=UDim2.new(1,0,0,30); B.BackgroundColor3=Color3.fromRGB(35,35,40); B.TextColor3=UIVars.Colors.Text; B.Font=Enum.Font.Gotham; B.TextSize=11; B.TextXAlignment=Enum.TextXAlignment.Left; B.Parent=page
-    Instance.new("UICorner", B).CornerRadius=UDim.new(0,4)
-    local function Update() B.Text = "  "..text..": "..tostring(Settings[flag] or list[1]) end
-    Update()
-    B.MouseButton1Click:Connect(function()
-        local cur = Settings[flag] or list[1]; local idx = table.find(list, cur) or 0
-        if idx >= #list then idx=0 end
-        Settings[flag] = list[idx+1]; Update(); if callback then callback(Settings[flag]) end SaveSystem()
+    tabFrames[tabName] = frame
+    tabButtons[tabName] = btn
+    
+    btn.MouseButton1Click:Connect(function()
+        for n, f in pairs(tabFrames) do f.Visible = (n == tabName) end
+        for n, b in pairs(tabButtons) do b.BackgroundColor3 = (n == tabName) and ColorTheme.Accent or Color3.fromRGB(40, 40, 50) end
     end)
 end
 
-function Library:Box(page, ph, callback)
-    local Box = Instance.new("TextBox"); Box.Size=UDim2.new(1,0,0,30); Box.BackgroundColor3=Color3.fromRGB(35,35,40); Box.Text=""; Box.PlaceholderText=ph; Box.TextColor3=UIVars.Colors.Text; Box.Font=Enum.Font.Gotham; Box.TextSize=11; Box.Parent=page
-    Instance.new("UICorner", Box).CornerRadius=UDim.new(0,4)
-    Box.FocusLost:Connect(function(enter) if enter then callback(Box.Text); Box.Text="" end end)
+-- UI Helpers
+local function UpdateToggleButton(frame, enabled)
+    local btn = frame:FindFirstChildOfClass("TextButton")
+    if btn then
+        btn.Text = enabled and "ON" or "OFF"
+        btn.BackgroundColor3 = enabled and ColorTheme.Success or ColorTheme.Danger
+    end
 end
 
-function Library:Label(page, txt)
-    local L = Instance.new("TextLabel"); L.Size=UDim2.new(1,0,0,20); L.BackgroundTransparency=1; L.Text=txt; L.TextColor3=UIVars.Colors.Accent; L.Font=Enum.Font.GothamBold; L.TextSize=11; L.Parent=page
-end
-
--- // BUILD UI // --
-local Win = Library:Init("Himono Hub v5.2 [Delta]")
-
-local Main = Library:Tab(Win, "Main")
-Library:Toggle(Main, "Auto Attack", "AutoAttack")
-Library:Toggle(Main, "Auto Collect", "AutoCollect")
-Library:Toggle(Main, "Anti-AFK", "AntiAFK")
-
-local Farm = Library:Tab(Win, "Farm")
-Library:Toggle(Farm, "Enable Farm", "AutoFarm")
-Library:Dropdown(Farm, "Method", {"Over", "Behind", "Under"}, "FarmMethod")
-Library:Label(Farm, "Mobs:")
-local Mobs = {"Thug", "Ninja", "Pirate", "Marine", "Demon", "Boss", "Bandit"}
-for _,m in pairs(Mobs) do
-    Library:Toggle(Farm, "Mob: "..m, "Mob_"..m, function(v)
-        if v then table.insert(Settings.SelectedMobs, m)
-        else for i,n in ipairs(Settings.SelectedMobs) do if n==m then table.remove(Settings.SelectedMobs, i) end end end
+local function CreateToggleSwitch(text, desc, default, callback)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, 0, 0, 60)
+    f.BackgroundTransparency = 1
+    
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 0, 50)
+    bg.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    bg.Parent = f
+    Instance.new("UICorner", bg)
+    
+    local l = Instance.new("TextLabel")
+    l.Text = text
+    l.Size = UDim2.new(0.7, 0, 0.5, 0)
+    l.Position = UDim2.new(0, 15, 0, 5)
+    l.BackgroundTransparency = 1
+    l.TextColor3 = ColorTheme.Text
+    l.Font = Enum.Font.GothamBold
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Parent = f
+    
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 50, 0, 26)
+    btn.Position = UDim2.new(1, -65, 0.5, -13)
+    btn.Text = default and "ON" or "OFF"
+    btn.BackgroundColor3 = default and ColorTheme.Success or ColorTheme.Danger
+    btn.Parent = f
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0.5, 0)
+    
+    local toggled = default
+    btn.MouseButton1Click:Connect(function()
+        toggled = not toggled
+        UpdateToggleButton(f, toggled)
+        if callback then callback(toggled) end
     end)
+    return f
 end
 
-local Dung = Library:Tab(Win, "Dungeon")
-Library:Dropdown(Dung, "Mode", {"Easy", "Medium", "Hard"}, "DungeonMode")
-Library:Toggle(Dung, "Auto Join Dungeon", "AutoJoinDungeon")
-Library:Toggle(Dung, "Auto Join Raid", "AutoJoinRaid")
-Library:Toggle(Dung, "Auto Farm (Kill All)", "AutoFarmDungeon")
+local function CreateActionButton(text, desc, callback)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, 0, 0, 60)
+    f.BackgroundTransparency = 1
+    
+    local btn = Instance.new("TextButton")
+    btn.Text = text
+    btn.Size = UDim2.new(0.5, 0, 0, 40)
+    btn.Position = UDim2.new(0, 10, 0, 10)
+    btn.BackgroundColor3 = ColorTheme.Accent
+    btn.Parent = f
+    Instance.new("UICorner", btn)
+    
+    btn.MouseButton1Click:Connect(function() if callback then callback() end end)
+    return f
+end
 
-local Extra = Library:Tab(Win, "Extra")
-Library:Toggle(Extra, "Auto Egg", "AutoEgg")
-Library:Toggle(Extra, "Multi Egg", "AutoMultiEgg")
-Library:Dropdown(Extra, "Crate", {"Biju", "Sayajin", "Race", "Haki", "Fruits"}, "SelectedGacha")
-Library:Toggle(Extra, "Auto Roll", "AutoRoll")
-Library:Toggle(Extra, "Auto Stats", "AutoStats")
-Library:Dropdown(Extra, "Stat", {"Mastery", "Damage", "Luck", "Yen"}, "SelectedStat")
+local function CreateComboBox(text, desc, items, callback)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, 0, 0, 70)
+    f.BackgroundTransparency = 1
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 0, 60)
+    bg.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    bg.Parent = f
+    Instance.new("UICorner", bg)
+    
+    local l = Instance.new("TextLabel")
+    l.Text = text
+    l.Size = UDim2.new(0.5, 0, 0.5, 0)
+    l.Position = UDim2.new(0, 15, 0, 5)
+    l.BackgroundTransparency = 1
+    l.TextColor3 = ColorTheme.Text
+    l.Parent = f
+    
+    local btn = Instance.new("TextButton")
+    btn.Text = items[1] or "Select"
+    btn.Size = UDim2.new(0.4, 0, 0, 35)
+    btn.Position = UDim2.new(0.55, 0, 0.2, 0)
+    btn.BackgroundColor3 = ColorTheme.Accent
+    btn.Parent = f
+    Instance.new("UICorner", btn)
+    
+    local idx = 1
+    btn.MouseButton1Click:Connect(function()
+        idx = idx + 1
+        if idx > #items then idx = 1 end
+        btn.Text = items[idx]
+        if callback then callback(items[idx]) end
+    end)
+    return f
+end
 
-local Conf = Library:Tab(Win, "System")
-Library:Toggle(Conf, "FPS Boost", "FPSBoost", UpdatePerformance)
-Library:Toggle(Conf, "White Screen", "WhiteScreen", UpdatePerformance)
-Library:Label(Conf, "Profile Manager")
-Library:Box(Conf, "Create/Select Profile...", function(t) ProfileName=t; LoadSystem() end)
-Library:Dropdown(Conf, "Saved Profiles", (function() local t={} if ConfigData then for k,_ in pairs(ConfigData.Profiles) do table.insert(t,k) end end return t end)(), "Dummy", function(v) ProfileName=v; LoadSystem() end)
-Library:Toggle(Conf, "Force Save Config", "DummySave", function() SaveSystem() end)
+-- MAIN TAB
+local mainC = tabFrames["🏠 MAIN"]
+local autoAttackToggle = CreateToggleSwitch("Auto Attack", "Auto click attack remote", false, function(v)
+    autoAttackEnabled = v
+    if v then StartLoop("AutoAttack", AutoAttackLogic, 0.3) else StopLoop("AutoAttack") end
+end)
+autoAttackToggle.Parent = mainC
 
--- // INIT // --
-LoadSystem()
-RunService.Heartbeat:Connect(FarmLoop)
+local autoCollectToggle = CreateToggleSwitch("Auto Collect", "Collect drops", false, function(v)
+    autoCollectEnabled = v
+    if v then StartLoop("AutoCollect", AutoCollectLogic, 1) else StopLoop("AutoCollect") end
+end)
+autoCollectToggle.Parent = mainC
+
+-- FARM TAB
+local farmC = tabFrames["🌾 FARM"]
+local farmSelToggle = CreateToggleSwitch("Farm Selected", "Farm mobs in list", false, function(v)
+    selectedFarmEnabled = v
+    if v then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) else StopLoop("FarmSelected") end
+end)
+farmSelToggle.Parent = farmC
+
+local farmRandToggle = CreateToggleSwitch("Farm Random", "Farm nearby mobs", false, function(v)
+    farmRandomEnabled = v
+    if v then StartLoop("FarmRandom", FarmRandomLogic, 0.5) else StopLoop("FarmRandom") end
+end)
+farmRandToggle.Parent = farmC
+
+local refreshBtn = CreateActionButton("Refresh Mobs", "Update mob list", function()
+    for _, c in pairs(farmC:GetChildren()) do if c.Name:find("GroupFrame") then c:Destroy() end end
+    local groups = GetEnemyGroups()
+    for name, g in pairs(groups) do
+        local gf = Instance.new("Frame")
+        gf.Name = "GroupFrame_"..name
+        gf.Size = UDim2.new(1, 0, 0, 50)
+        gf.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+        gf.Parent = farmC
+        Instance.new("UICorner", gf)
+        
+        local l = Instance.new("TextLabel")
+        l.Text = name .. " (x"..g.count..")"
+        l.Size = UDim2.new(0.6, 0, 1, 0)
+        l.Position = UDim2.new(0, 15, 0, 0)
+        l.BackgroundTransparency = 1
+        l.TextColor3 = ColorTheme.Text
+        l.Parent = gf
+        
+        local b = Instance.new("TextButton")
+        b.Text = "Select"
+        b.Size = UDim2.new(0.3, 0, 0.6, 0)
+        b.Position = UDim2.new(0.65, 0, 0.2, 0)
+        b.BackgroundColor3 = ColorTheme.Accent
+        b.Parent = gf
+        Instance.new("UICorner", b)
+        
+        b.MouseButton1Click:Connect(function()
+            if not table.find(selectedEnemyNames, name) then
+                table.insert(selectedEnemyNames, name)
+                b.BackgroundColor3 = ColorTheme.Success
+            else
+                for i, v in ipairs(selectedEnemyNames) do if v == name then table.remove(selectedEnemyNames, i) end end
+                b.BackgroundColor3 = ColorTheme.Accent
+            end
+        end)
+    end
+end)
+refreshBtn.Parent = farmC
+
+-- GACHA TAB
+local gachaC = tabFrames["🎰 GACHA"]
+local gachaCombo = CreateComboBox("Gacha Type", "Select crate", {"Biju", "Sayajin", "Race", "Haki", "Fruits"}, function(v) selectedGachaType = v end)
+gachaCombo.Parent = gachaC
+
+local gachaToggle = CreateToggleSwitch("Auto Roll", "Roll selected crate", false, function(v)
+    if v then 
+        StartLoop("Gacha", function() 
+            StartGacha(selectedGachaType) 
+        end, 2)
+    else
+        StopLoop("Gacha")
+    end
+end)
+gachaToggle.Parent = gachaC
+
+-- STATS TAB
+local statsC = tabFrames["⚡ STATS"]
+CreateComboBox("Stat", "Select stat", {"Mastery", "Damage", "Luck", "Yen"}, function(v) selectedStat = v end).Parent = statsC
+CreateToggleSwitch("Auto Upgrade", "Upgrade stat", false, function(v)
+    autoStatEnabled = v
+    if v then StartLoop("Stats", AutoStatLogic, 1) else StopLoop("Stats") end
+end).Parent = statsC
+
+-- TELEPORT TAB
+local teleC = tabFrames["🚀 TELEPORT"]
+CreateComboBox("Zone", "Teleport to", {"Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5"}, function(v) selectedZone = v end).Parent = teleC
+CreateActionButton("Teleport", "Go now", function() TeleportToZone(selectedZone) end).Parent = teleC
+
+-- EGG TAB
+local eggC = tabFrames["🥚 OPEN EGG"]
+CreateToggleSwitch("Auto Egg", "Open egg", false, function(v)
+    autoEggEnabled = v
+    if v then StartLoop("Egg", StartAutoEgg, 1) else StopLoop("Egg") end
+end).Parent = eggC
+CreateActionButton("Multi Egg", "Open multi", OpenMultiEgg).Parent = eggC
+
+-- DUNGEON TAB
+local dungC = tabFrames["🏰 DUNGEON"]
+CreateComboBox("Mode", "Difficulty", {"Easy", "Medium", "Hard"}, function(v) selectedDungeonMode = v end).Parent = dungC
+CreateToggleSwitch("Auto Join Dungeon", "Join when available", false, function(v)
+    autoJoinDungeonEnabled = v
+    if v then StartLoop("JoinD", AutoJoinDungeonLogic, 2) else StopLoop("JoinD") end
+end).Parent = dungC
+CreateToggleSwitch("Auto Join Raid", "Join raid", false, function(v)
+    autoJoinRaidEnabled = v
+    if v then StartLoop("JoinR", AutoJoinRaidLogic, 2) else StopLoop("JoinR") end
+end).Parent = dungC
+CreateToggleSwitch("Auto Farm Dungeon", "Kill all & Return", false, function(v)
+    autoFarmDungeonEnabled = v
+    if v then StartLoop("FarmD", FarmDungeonLogic, 0.3) else StopLoop("FarmD") end
+end).Parent = dungC
+
+-- CONFIG TAB
+local confC = tabFrames["💾 CONFIG"]
+local profBox = Instance.new("TextBox")
+profBox.Size = UDim2.new(1, 0, 0, 40)
+profBox.PlaceholderText = "Profile Name..."
+profBox.Parent = confC
+CreateActionButton("Create Profile", "New config", function() CreateNewProfile(profBox.Text) end).Parent = confC
+CreateActionButton("Save Config", "Save current", SaveConfig).Parent = confC
+CreateActionButton("Load Config", "Load current", function() LoadConfig() ApplyLoadedConfig() end).Parent = confC
+
+-- NEW: Hàm áp dụng config đã load
+function ApplyLoadedConfig()
+    -- Cập nhật UI và trạng thái
+    UpdateToggleButton(autoAttackToggle, autoAttackEnabled)
+    UpdateToggleButton(farmSelToggle, selectedFarmEnabled)
+    if autoAttackEnabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) end
+    if selectedFarmEnabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) end
+    if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
+    if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1) end
+    if autoEggEnabled then StartLoop("Egg", StartAutoEgg, 1) end
+    if autoFarmDungeonEnabled then StartLoop("FarmD", FarmDungeonLogic, 0.3) end
+    if autoJoinDungeonEnabled then StartLoop("JoinD", AutoJoinDungeonLogic, 2) end
+    if autoJoinRaidEnabled then StartLoop("JoinR", AutoJoinRaidLogic, 2) end
+    if autoStatEnabled then StartLoop("Stats", AutoStatLogic, 1) end
+    if antiAFKEnabled then EnableAntiAFK() else DisableAntiAFK() end
+end
+
+-- Init
+LoadProfiles()
+LoadConfig("default")
+ApplyLoadedConfig()
+
+-- Dragging Logic
+local dragging, dragInput, dragStart, startPos
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainContainer.Position
+    end
+end)
+TitleBar.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        MainContainer.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Canvas Resize
 task.spawn(function()
     while task.wait(1) do
-        DungeonLoop()
-        MiscLoop()
-        if Settings.AutoCollect and LocalPlayer.Character then
-            for _,v in pairs(Workspace:GetDescendants()) do
-                if (v.Name:find("Drop") or v.Name:find("Coin")) and (LocalPlayer.Character.HumanoidRootPart.Position - v.Position).Magnitude < 30 then
-                    FireRemote({[1]="Collect", [2]=v})
-                end
-            end
-        end
+        for _, f in pairs(tabFrames) do f.CanvasSize = UDim2.new(0, 0, 0, f.UIListLayout.AbsoluteContentSize.Y + 50) end
     end
 end)
 
--- Anti-AFK (Delta Safe)
-LocalPlayer.Idled:Connect(function()
-    if Settings.AntiAFK then
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Unknown, false, game)
-    end
-end)
-
-Notify("Himono Hub v5.2 Loaded!")
+print("⚡ HIMONO HUB v4.6 - REMASTERED LOADED")
