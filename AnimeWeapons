@@ -1,4 +1,4 @@
--- Himono Hub v4.3 - DARK EDITION (MODERN UI / DUNGEON SYSTEM / CONFIG PROFILES)
+-- Himono Hub v4.3 - DARK EDITION (MODERN UI / DUNGEON SYSTEM / CONFIG PROFILES) - ANTI-CHEAT OPTIMIZED
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -40,15 +40,18 @@ local autoCollectEnabled = false
 local stealthModeEnabled = true
 local antiAFKEnabled = true
 
--- Config file paths - SỬA LẠI ĐƯỜNG DẪN VÀO FOLDER HIMONOHUB
-local configFolder = "HimonoHub/"
-local configFile = configFolder .. "HimonoHubConfig.txt"
-local profilesFile = configFolder .. "HimonoHubProfiles.txt"
+-- Config file paths - ĐÃ ĐỔI TÊN FOLDER VÀ FILE THÀNH TÊN CHUNG CHUNG
+local configFolder = "DataCache/"
+local configFile = configFolder .. "GameSettings.json"
+local profilesFile = configFolder .. "UserProfiles.json"
 
 -- Tạo folder nếu chưa tồn tại
-if not isfolder("HimonoHub") then
-    makefolder("HimonoHub")
+if not isfolder("DataCache") then
+    makefolder("DataCache")
 end
+
+-- Khởi tạo random seed một lần duy nhất
+local random = Random.new(tick())
 
 -- Màu sắc theme mới (Dark Modern)
 local ColorTheme = {
@@ -71,8 +74,8 @@ end
 
 local function SafeWait()
     if not stealthMode then task.wait(); return end
-    math.randomseed(tick())
-    local delay = math.random(20, 50) / 100
+    -- Sử dụng random đã được khởi tạo thay vì math.randomseed liên tục
+    local delay = random:NextNumber(20, 50) / 100
     local start = tick()
     while tick() - start < delay do RunService.Heartbeat:Wait() end
 end
@@ -223,7 +226,7 @@ local function GetEnemyGroups()
     return groups
 end
 
--- Auto farm logic (Vòng Lặp Mục Tiêu Tốc Độ Cao)
+-- Auto farm logic (Vòng Lặp Mục Tiêu Tốc Độ Cao) - ĐÃ GIẢM TẦN SUẤT TELEPORT
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
     
@@ -254,11 +257,11 @@ local function FarmSelectedLogic()
         
         if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
             
-            -- Teleport đến mục tiêu (sử dụng offset ngẫu nhiên nhẹ)
+            -- Teleport đến mục tiêu (sử dụng offset ngẫu nhiên lớn hơn và ít thường xuyên hơn)
             local offset = Vector3.new(
-                math.random(-10, 10) / 10,
+                random:NextInteger(-15, 15) / 10,
                 3,
-                math.random(-10, 10) / 10
+                random:NextInteger(-15, 15) / 10
             )
             character.HumanoidRootPart.CFrame = CFrame.new(target.Position + offset)
             
@@ -266,17 +269,17 @@ local function FarmSelectedLogic()
             if remote then 
                 -- Tấn công nhanh (burst attack)
                 SafeFire(remote, "Attack", target.Model)
-                task.wait(0.05)
+                task.wait(0.1) -- Tăng độ trễ giữa các lần tấn công
                 SafeFire(remote, "Attack", target.Model)
             end
         end
         
-        -- Độ trễ ngắn trước khi chuyển sang mục tiêu tiếp theo
-        task.wait(0.1) 
+        -- Độ trễ tăng lên trước khi chuyển sang mục tiêu tiếp theo
+        task.wait(0.3) 
     end
 end
 
--- NEW: Auto farm dungeon logic
+-- NEW: Auto farm dungeon logic - ĐÃ GIẢM TẦN SUẤT TELEPORT
 local function FarmDungeonLogic()
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
@@ -295,22 +298,22 @@ local function FarmDungeonLogic()
             if not activeLoops["FarmDungeon"] then break end
             
             if enemy.Model and enemy.Model:FindFirstChild("Humanoid") and enemy.Model.Humanoid.Health > 0 then
-                -- Teleport đến enemy
+                -- Teleport đến enemy với offset ngẫu nhiên lớn hơn
                 local offset = Vector3.new(
-                    math.random(-8, 8) / 10,
+                    random:NextInteger(-12, 12) / 10,
                     2,
-                    math.random(-8, 8) / 10
+                    random:NextInteger(-12, 12) / 10
                 )
                 character.HumanoidRootPart.CFrame = CFrame.new(enemy.Position + offset)
                 
                 local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
                 if remote then 
                     SafeFire(remote, "Attack", enemy.Model)
-                    task.wait(0.05)
+                    task.wait(0.1) -- Tăng độ trễ
                     SafeFire(remote, "Attack", enemy.Model)
                 end
                 
-                task.wait(0.1)
+                task.wait(0.3) -- Tăng độ trễ giữa các enemy
             end
         end
     else
@@ -337,29 +340,43 @@ local function FarmDungeonLogic()
     end
 end
 
--- NEW: Auto join dungeon logic - KIỂM TRA THÔNG BÁO
+-- NEW: Auto join dungeon logic - CẢI THIỆN LOGIC TÌM KIẾM THÔNG BÁO
 local function AutoJoinDungeonLogic()
     if autoJoinDungeonEnabled then
-        -- Kiểm tra xem có thông báo dungeon mở không
+        -- Kiểm tra xem có thông báo dungeon mở không - TỐI ƯU HÓA TÌM KIẾM
         local foundDungeon = false
         
-        -- Kiểm tra trong workspace xem có thông báo dungeon không
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("Message") or (obj:IsA("Part") and obj.Name:lower():find("dungeon")) then
-                local messageText = obj.Text or obj.Name or ""
-                if messageText:lower():find("dungeon") and messageText:lower():find("open") then
+        -- Ưu tiên tìm trong PlayerGui trước vì ít tốn tài nguyên hơn
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            -- Tìm các UI element có tên cụ thể liên quan đến dungeon
+            local dungeonNotification = playerGui:FindFirstChild("DungeonNotification") or
+                                       playerGui:FindFirstChild("DungeonOpen") or
+                                       playerGui:FindFirstChild("Notification")
+            
+            if dungeonNotification then
+                local text = ""
+                if dungeonNotification:IsA("TextLabel") or dungeonNotification:IsA("TextButton") then
+                    text = dungeonNotification.Text or ""
+                elseif dungeonNotification:IsA("Frame") then
+                    -- Tìm text label trong frame
+                    local textLabel = dungeonNotification:FindFirstChildOfClass("TextLabel")
+                    if textLabel then
+                        text = textLabel.Text or ""
+                    end
+                end
+                
+                if text:lower():find("dungeon") and text:lower():find("open") then
                     foundDungeon = true
-                    break
                 end
             end
         end
         
-        -- Kiểm tra trong PlayerGui
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-            for _, gui in pairs(playerGui:GetDescendants()) do
-                if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-                    local text = gui.Text or ""
+        -- Nếu không tìm thấy trong PlayerGui, thử tìm trong workspace (ít phổ biến hơn)
+        if not foundDungeon then
+            for _, obj in pairs(workspace:GetChildren()) do
+                if obj:IsA("Part") and (obj.Name:lower():find("dungeon") or obj.Name:lower():find("notification")) then
+                    local text = obj.Name or ""
                     if text:lower():find("dungeon") and text:lower():find("open") then
                         foundDungeon = true
                         break
@@ -374,29 +391,43 @@ local function AutoJoinDungeonLogic()
     end
 end
 
--- NEW: Auto join raid logic - KIỂM TRA THÔNG BÁO
+-- NEW: Auto join raid logic - CẢI THIỆN LOGIC TÌM KIẾM THÔNG BÁO
 local function AutoJoinRaidLogic()
     if autoJoinRaidEnabled then
-        -- Kiểm tra xem có thông báo raid mở không
+        -- Kiểm tra xem có thông báo raid mở không - TỐI ƯU HÓA TÌM KIẾM
         local foundRaid = false
         
-        -- Kiểm tra trong workspace xem có thông báo raid không
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("Message") or (obj:IsA("Part") and obj.Name:lower():find("raid")) then
-                local messageText = obj.Text or obj.Name or ""
-                if messageText:lower():find("raid") and messageText:lower():find("open") then
+        -- Ưu tiên tìm trong PlayerGui trước
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            -- Tìm các UI element có tên cụ thể liên quan đến raid
+            local raidNotification = playerGui:FindFirstChild("RaidNotification") or
+                                    playerGui:FindFirstChild("RaidOpen") or
+                                    playerGui:FindFirstChild("Notification")
+            
+            if raidNotification then
+                local text = ""
+                if raidNotification:IsA("TextLabel") or raidNotification:IsA("TextButton") then
+                    text = raidNotification.Text or ""
+                elseif raidNotification:IsA("Frame") then
+                    -- Tìm text label trong frame
+                    local textLabel = raidNotification:FindFirstChildOfClass("TextLabel")
+                    if textLabel then
+                        text = textLabel.Text or ""
+                    end
+                end
+                
+                if text:lower():find("raid") and text:lower():find("open") then
                     foundRaid = true
-                    break
                 end
             end
         end
         
-        -- Kiểm tra trong PlayerGui
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-            for _, gui in pairs(playerGui:GetDescendants()) do
-                if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-                    local text = gui.Text or ""
+        -- Nếu không tìm thấy trong PlayerGui, thử tìm trong workspace
+        if not foundRaid then
+            for _, obj in pairs(workspace:GetChildren()) do
+                if obj:IsA("Part") and (obj.Name:lower():find("raid") or obj.Name:lower():find("notification")) then
+                    local text = obj.Name or ""
                     if text:lower():find("raid") and text:lower():find("open") then
                         foundRaid = true
                         break
@@ -418,14 +449,20 @@ local function AutoStatLogic()
     end
 end
 
--- Auto farm logic
+-- Auto farm logic - ĐÃ GIẢM TẦN SUẤT
 local function AutoAttackLogic()
     local enemies = FindEnemiesInRange(50)
     if #enemies > 0 then
         local nearestEnemy = enemies[1]
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
-            character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + Vector3.new(0,2,0))
+            -- Sử dụng offset ngẫu nhiên
+            local offset = Vector3.new(
+                random:NextInteger(-8, 8) / 10,
+                2,
+                random:NextInteger(-8, 8) / 10
+            )
+            character.HumanoidRootPart.CFrame = CFrame.new(nearestEnemy.Position + offset)
             local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
             if remote then SafeFire(remote, "Attack", nearestEnemy.Model) end
         end
@@ -435,10 +472,16 @@ end
 local function FarmRandomLogic()
     local enemies = FindEnemiesInRange(50)
     if #enemies > 0 then
-        local randomEnemy = enemies[math.random(1, #enemies)]
+        local randomEnemy = enemies[random:NextInteger(1, #enemies)]
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
-            character.HumanoidRootPart.CFrame = CFrame.new(randomEnemy.Position + Vector3.new(0,2,0))
+            -- Sử dụng offset ngẫu nhiên
+            local offset = Vector3.new(
+                random:NextInteger(-8, 8) / 10,
+                2,
+                random:NextInteger(-8, 8) / 10
+            )
+            character.HumanoidRootPart.CFrame = CFrame.new(randomEnemy.Position + offset)
             local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
             if remote then SafeFire(remote, "Attack", randomEnemy.Model) end
         end
@@ -459,12 +502,12 @@ local function AutoCollectLogic()
     end
 end
 
--- Các hàm cơ bản (Gacha, Teleport, Stats)
+-- Các hàm cơ bản (Gacha, Teleport, Stats) - SỬ DỤNG REMOTE "Crate Roll Start/Stop" THAY VÌ "Gacha Auto"
 local function StartGacha(gachaType)
     local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
     if remote then
         SafeFire(remote, "Crate Roll Start", {[1]=gachaType,[2]=true})
-        task.wait(1)
+        task.wait(1.5) -- Tăng độ trễ
         SafeFire(remote, "Crate Roll Stop")
     end
 end
@@ -509,7 +552,7 @@ local function JoinDungeon(mode)
         -- Nếu auto farm dungeon được bật, bắt đầu farm sau khi join
         if autoFarmDungeonEnabled then
             task.wait(3) -- Chờ load dungeon
-            StartLoop("FarmDungeon", FarmDungeonLogic, 0.2)
+            StartLoop("FarmDungeon", FarmDungeonLogic, 0.3) -- Giảm tần suất
         end
     end
 end
@@ -693,7 +736,7 @@ end
 
 -- GUI Initialization với theme mới
 local HimonoHub = Instance.new("ScreenGui")
-HimonoHub.Name = "HimonoHubDark"
+HimonoHub.Name = "GameUI"
 HimonoHub.ResetOnSpawn = false
 HimonoHub.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 HimonoHub.Parent = game.CoreGui
@@ -701,7 +744,7 @@ HimonoHub.Enabled = true
 
 -- MINI UI (Nút Neo) - Dark Theme
 local HimonoMini = Instance.new("ScreenGui")
-HimonoMini.Name = "HimonoHubMini"
+HimonoMini.Name = "GameUIMini"
 HimonoMini.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 HimonoMini.Enabled = false
 HimonoMini.Parent = game.CoreGui
@@ -780,7 +823,7 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "⚡ HIMONO HUB v4.3 - DARK EDITION"
+Title.Text = "⚡ GAME ASSISTANT v1.0"
 Title.TextColor3 = ColorTheme.Text
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
@@ -1170,7 +1213,7 @@ local mainContent = tabFrames["🏠 MAIN"]
 local mainStatus = Instance.new("TextLabel")
 mainStatus.Size = UDim2.new(1, -20, 0, 40)
 mainStatus.BackgroundTransparency = 1
-mainStatus.Text = "⚡ DARK EDITION - Tất cả tính năng đã sẵn sàng!"
+mainStatus.Text = "⚡ GAME ASSISTANT - Tất cả tính năng đã sẵn sàng!"
 mainStatus.TextColor3 = ColorTheme.Text
 mainStatus.Font = Enum.Font.Gotham
 mainStatus.TextSize = 14
@@ -1182,28 +1225,28 @@ local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonTog
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
     autoAttackEnabled = enabled
-    if enabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) else StopLoop("AutoAttack") end
+    if enabled then StartLoop("AutoAttack", AutoAttackLogic, 0.5) else StopLoop("AutoAttack") end -- Giảm tần suất
 end)
 autoAttackToggleFrame.Parent = mainContent
 
 autoDropsToggleFrame = CreateToggleSwitch("Enable Auto Collect All Drops", "Tự động nhặt vật phẩm quanh bạn", false, function(enabled)
     autoCollectEnabled = enabled
-    if enabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) else StopLoop("AutoCollect") end
+    if enabled then StartLoop("AutoCollect", AutoCollectLogic, 1.5) else StopLoop("AutoCollect") end -- Giảm tần suất
 end)
 autoDropsToggleFrame.Parent = mainContent
 
 -- FARM TAB - DI CHUYỂN CÁC TÍNH NĂNG FARM VÀO ĐÂY
 local farmContent = tabFrames["🌾 FARM"]
 
-autoFarmSelectedToggleFrame = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên (SPEED: 0.1s)", false, function(enabled)
+autoFarmSelectedToggleFrame = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên (SPEED: 0.3s)", false, function(enabled)
     selectedFarmEnabled = enabled
-    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) else StopLoop("FarmSelected") end 
+    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.3) else StopLoop("FarmSelected") end -- Giảm tần suất
 end)
 autoFarmSelectedToggleFrame.Parent = farmContent
 
 autoFarmRandomToggleFrame = CreateToggleSwitch("Enable Farm Random Enemies", "Tự động farm ngẫu nhiên", false, function(enabled)
     farmRandomEnabled = enabled
-    if enabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) else StopLoop("FarmRandom") end
+    if enabled then StartLoop("FarmRandom", FarmRandomLogic, 0.8) else StopLoop("FarmRandom") end -- Giảm tần suất
 end)
 autoFarmRandomToggleFrame.Parent = farmContent
 
@@ -1329,7 +1372,7 @@ gachaCombo.Parent = gachaContent
 for _, gacha in ipairs(gachaTypes) do
     local toggle = CreateToggleSwitch("Enable Auto Roll " .. gacha, "Tự động roll " .. gacha, false, function(enabled)
         if enabled then
-            StartLoop("AutoRoll"..gacha, function() StartGacha(gacha) end, 2)
+            StartLoop("AutoRoll"..gacha, function() StartGacha(gacha) end, 3) -- Tăng độ trễ
         else
             StopLoop("AutoRoll"..gacha)
         end
@@ -1348,7 +1391,7 @@ statCombo.Parent = statsContent
 local autoStatToggleFrame = CreateToggleSwitch("Enable Auto Stat", "Tự động cộng điểm stat đã chọn", false, function(enabled)
     autoStatEnabled = enabled
     if enabled then 
-        StartLoop("AutoStat", AutoStatLogic, 1)
+        StartLoop("AutoStat", AutoStatLogic, 2) -- Tăng độ trễ
     else
         StopLoop("AutoStat")
     end
@@ -1383,7 +1426,7 @@ openEggBtn.Parent = eggContent
 autoOpenEggToggleFrame = CreateToggleSwitch("Enable Auto Open Egg", "Tự động mở egg khi gần (15m)", false, function(enabled)
     autoOpenEggEnabled = enabled
     if enabled then
-        StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2)
+        StartLoop("AutoOpenEgg", AutoOpenEggLogic, 3) -- Tăng độ trễ
     else
         StopLoop("AutoOpenEgg")
     end
@@ -1412,7 +1455,7 @@ dungeonModeCombo.Parent = dungeonContent
 local autoJoinDungeonToggle = CreateToggleSwitch("Enable Auto Join Dungeon", "Tự động join khi có thông báo dungeon open", false, function(enabled)
     autoJoinDungeonEnabled = enabled
     if enabled then
-        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 5) -- Kiểm tra mỗi 5s
+        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 8) -- Giảm tần suất kiểm tra
     else
         StopLoop("AutoJoinDungeon")
     end
@@ -1449,7 +1492,7 @@ raidSection.Parent = dungeonContent
 local autoJoinRaidToggle = CreateToggleSwitch("Enable Auto Join Raid", "Tự động join khi có thông báo raid open", false, function(enabled)
     autoJoinRaidEnabled = enabled
     if enabled then
-        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 5) -- Kiểm tra mỗi 5s
+        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 8) -- Giảm tần suất kiểm tra
     else
         StopLoop("AutoJoinRaid")
     end
@@ -1616,22 +1659,22 @@ local function ApplyLoadedConfig()
     StealthLabel.TextColor3 = stealthMode and ColorTheme.Success or ColorTheme.Danger
     
     -- Kích hoạt các vòng lặp nếu cần
-    if autoAttackEnabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) end
-    if selectedFarmEnabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) end
-    if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
-    if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
-    if autoOpenEggEnabled then StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2) end
+    if autoAttackEnabled then StartLoop("AutoAttack", AutoAttackLogic, 0.5) end
+    if selectedFarmEnabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.3) end
+    if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.8) end
+    if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.5) end
+    if autoOpenEggEnabled then StartLoop("AutoOpenEgg", AutoOpenEggLogic, 3) end
     if autoFarmDungeonEnabled then 
-        StartLoop("FarmDungeon", FarmDungeonLogic, 0.2) 
+        StartLoop("FarmDungeon", FarmDungeonLogic, 0.3) 
     end
     if autoJoinDungeonEnabled then
-        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 5)
+        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 8)
     end
     if autoJoinRaidEnabled then
-        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 5)
+        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 8)
     end
     if autoStatEnabled then
-        StartLoop("AutoStat", AutoStatLogic, 1)
+        StartLoop("AutoStat", AutoStatLogic, 2)
     end
     if antiAFKEnabled then EnableAntiAFK() else DisableAntiAFK() end
     
@@ -1705,4 +1748,4 @@ else
     ApplyLoadedConfig()
 end
 
-print("⚡ HIMONO HUB v4.3 - DARK EDITION LOADED!")
+print("⚡ GAME ASSISTANT v1.0 - ANTI-CHEAT OPTIMIZED LOADED!")
