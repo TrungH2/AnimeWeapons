@@ -1,10 +1,12 @@
 --[[
-    ⚡ HIMONO HUB v5.1 - PLATINUM EDITION
+    ⚡ HIMONO HUB v5.2 - DELTA EXECUTOR EDITION
     ----------------------------------------
-    [cite_start]• Remote: Fixed (22/11/2025) [cite: 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    • System: Multi-Profile Config, Auto Return, Performance Mode
-    • UI: Modern Embedded Library
+    • Compatibility: Delta / Fluxus / Mobile / PC
+    • Fixes: UI Parent (PlayerGui), Safe FileSystem, Anti-AFK
 ]]
+
+-- // INIT CHECK // --
+if not game:IsLoaded() then game.Loaded:Wait() end
 
 -- // SERVICES // --
 local Players = game:GetService("Players")
@@ -14,15 +16,15 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
-local VirtualUser = game:GetService("VirtualUser")
-local CoreGui = game:GetService("CoreGui")
+local VirtualInputManager = game:GetService("VirtualInputManager") -- Better for Delta
 local Lighting = game:GetService("Lighting")
 
 local LocalPlayer = Players.LocalPlayer
-local Camera = Workspace.CurrentCamera
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- // GLOBAL HELPER (CRITICAL FOR EGG) // --
+-- // GLOBAL HELPER // --
 getgenv().getNil = function(name, class)
+    -- Delta support check
     if getnilinstances then
         for _, v in next, getnilinstances() do
             if v.ClassName == class and v.Name == name then
@@ -34,117 +36,105 @@ getgenv().getNil = function(name, class)
 end
 
 -- // VARIABLES & SETTINGS // --
-local FileName = "HimonoHub_Platinum_Config.json"
+local FileName = "HimonoHub_Delta_Config.json"
 local ProfileName = "default"
 
 local Settings = {
-    -- Main
     AutoFarm = false,
     AutoAttack = false,
     AutoCollect = false,
     StealthMode = true,
     AntiAFK = true,
-    
-    -- Farm
     SelectedMobs = {},
     FarmMethod = "Behind",
     Distance = 5,
-    
-    -- Dungeon/Raid
     AutoJoinDungeon = false,
     AutoJoinRaid = false,
     AutoFarmDungeon = false,
     DungeonMode = "Easy",
-    
-    -- Gacha
     AutoEgg = false,
     AutoMultiEgg = false,
     AutoRoll = false,
     SelectedGacha = "Biju",
-    
-    -- Stats/TP
     AutoStats = false,
     SelectedStat = "Mastery",
-    
-    -- Performance
     FPSBoost = false,
     WhiteScreen = false
 }
 
--- Dungeon State
 local State = {
     OriginalPos = nil,
     IsInDungeon = false,
-    LastDungeonCheck = 0,
     WasInDungeon = false
 }
 
--- // UI NOTIFICATION SYSTEM // --
-local NotifyFunc = nil
+-- // NOTIFICATION SYSTEM // --
+local function Notify(msg)
+    print("[HIMONO]: " .. msg)
+    -- Simple notification compatible with mobile
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Himono Hub",
+        Text = msg,
+        Duration = 3
+    })
+end
 
--- // CONFIG SYSTEM (MULTI-PROFILE) // --
-local ConfigData = {
-    Profiles = {},
-    LastProfile = "default"
-}
+-- // CONFIG SYSTEM (SAFE MODE) // --
+local ConfigData = { Profiles = {} }
 
 local function SaveSystem()
-    ConfigData.Profiles[ProfileName] = Settings
-    ConfigData.LastProfile = ProfileName
-    writefile(FileName, HttpService:JSONEncode(ConfigData))
-    if NotifyFunc then NotifyFunc("Config Saved: " .. ProfileName, 2) end
+    pcall(function()
+        ConfigData.Profiles[ProfileName] = Settings
+        writefile(FileName, HttpService:JSONEncode(ConfigData))
+        Notify("Config Saved: " .. ProfileName)
+    end)
 end
 
 local function LoadSystem()
-    if isfile(FileName) then
-        local s, result = pcall(function() return HttpService:JSONDecode(readfile(FileName)) end)
-        if s and result then
-            ConfigData = result
-            if ConfigData.Profiles[ProfileName] then
-                for k,v in pairs(ConfigData.Profiles[ProfileName]) do
-                    Settings[k] = v
+    pcall(function()
+        if isfile(FileName) then
+            local result = HttpService:JSONDecode(readfile(FileName))
+            if result then
+                ConfigData = result
+                if ConfigData.Profiles[ProfileName] then
+                    for k,v in pairs(ConfigData.Profiles[ProfileName]) do
+                        Settings[k] = v
+                    end
+                    Notify("Config Loaded: " .. ProfileName)
                 end
-                if NotifyFunc then NotifyFunc("Config Loaded: " .. ProfileName, 2) end
             end
         end
-    end
+    end)
 end
 
--- // REMOTE SYSTEM (FIXED) // --
+-- // REMOTE SYSTEM // --
 local function FireRemote(args)
     if Settings.StealthMode then 
         if math.random(1, 15) == 1 then task.wait(0.1) end
     end
     
-    [cite_start]local Remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable") -- [cite: 36, 128]
+    local Remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
     if Remote then
         Remote:FireServer(unpack(args))
     else
+        -- Fallback
         pcall(function() ReplicatedStorage.Reply.Reliable:FireServer(unpack(args)) end)
     end
 end
 
 -- // LOGIC FUNCTIONS // --
 
-[cite_start]-- 1. Performance [cite: 69, 71]
-local OriginalSettings = {
-    Quality = settings().Rendering.QualityLevel,
-    Shadows = Lighting.GlobalShadows
-}
-
 local function UpdatePerformance()
     if Settings.FPSBoost then
         settings().Rendering.QualityLevel = 1
         Lighting.GlobalShadows = false
     else
-        settings().Rendering.QualityLevel = OriginalSettings.Quality
-        Lighting.GlobalShadows = OriginalSettings.Shadows
+        settings().Rendering.QualityLevel = 10
+        Lighting.GlobalShadows = true
     end
-    
     game:GetService("RunService"):Set3dRenderingEnabled(not Settings.WhiteScreen)
 end
 
-[cite_start]-- 2. Dungeon Management (Auto Return) [cite: 86, 87]
 local function CheckDungeonState()
     local nowInDungeon = false
     if Workspace:FindFirstChild("Map") then
@@ -152,12 +142,11 @@ local function CheckDungeonState()
         if n:find("dungeon") or n:find("raid") or n:find("boss") then nowInDungeon = true end
     end
     
-    -- Auto Return Logic
     if State.WasInDungeon and not nowInDungeon then
-        if State.OriginalPos and LocalPlayer.Character then
+        if State.OriginalPos and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             task.wait(1)
             LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(State.OriginalPos)
-            NotifyFunc("Returned to Original Position", 3)
+            Notify("Returned to Start")
             State.OriginalPos = nil
         end
     end
@@ -167,54 +156,35 @@ end
 
 local function DungeonLoop()
     CheckDungeonState()
-    
     if not State.IsInDungeon then
-        -- Auto Join Logic
-        if Settings.AutoJoinDungeon then
+        if Settings.AutoJoinDungeon or Settings.AutoJoinRaid then
             if not State.OriginalPos and LocalPlayer.Character then 
                 State.OriginalPos = LocalPlayer.Character.HumanoidRootPart.Position 
             end
-            
+        end
+        
+        if Settings.AutoJoinDungeon then
             local m = "1"
             if Settings.DungeonMode == "Medium" then m = "2" end
             if Settings.DungeonMode == "Hard" then m = "3" end
-            [cite_start]-- [cite: 46, 121]
             FireRemote({[1] = "Join Gamemode", [2] = {[1] = "Dungeon:"..m}})
         end
         
         if Settings.AutoJoinRaid then
-             if not State.OriginalPos and LocalPlayer.Character then 
-                State.OriginalPos = LocalPlayer.Character.HumanoidRootPart.Position 
-            end
-            [cite_start]-- [cite: 47, 125]
             FireRemote({[1] = "Join Gamemode", [2] = {[1] = "Raid:1"}})
         end
     end
 end
 
--- 3. Combat & Farm
-local function AutoAttack()
-    [cite_start]FireRemote({[1] = "Settings", [2] = {[1] = "AutoClick", [2] = true}}) -- [cite: 37]
-end
-
-local function Attack(model)
-    if model and model:FindFirstChild("Humanoid") then
-        [cite_start]FireRemote({[1] = "Attack", [2] = model}) -- [cite: 91]
-    end
-end
-
 local function FarmLoop()
     if not Settings.AutoFarm and not (Settings.AutoFarmDungeon and State.IsInDungeon) then return end
-    if not LocalPlayer.Character then return end
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
     
     local target = nil
-    
-    -- Find Target
-    local mobs = Workspace:GetDescendants()
-    for _, v in pairs(mobs) do
+    for _, v in pairs(Workspace:GetDescendants()) do
         if v:IsA("Model") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 and not Players:GetPlayerFromCharacter(v) then
             if State.IsInDungeon and Settings.AutoFarmDungeon then
-                target = v -- Kill all in dungeon
+                target = v
                 break
             elseif Settings.AutoFarm and table.find(Settings.SelectedMobs, v.Name) then
                 target = v
@@ -223,8 +193,7 @@ local function FarmLoop()
         end
     end
     
-    -- Attack Target
-    if target then
+    if target and target:FindFirstChild("HumanoidRootPart") then
         local HRP = LocalPlayer.Character.HumanoidRootPart
         local TPPos = target.HumanoidRootPart.Position
         
@@ -233,14 +202,14 @@ local function FarmLoop()
         if Settings.FarmMethod == "Behind" then TPPos = TPPos + (target.HumanoidRootPart.CFrame.LookVector * -Settings.Distance) end
         
         HRP.CFrame = CFrame.new(TPPos, target.HumanoidRootPart.Position)
-        AutoAttack()
-        Attack(target)
+        
+        -- Attack
+        FireRemote({[1] = "Settings", [2] = {[1] = "AutoClick", [2] = true}})
+        FireRemote({[1] = "Attack", [2] = target})
     end
 end
 
--- 4. Gacha & Stats
 local function MiscLoop()
-    [cite_start]-- Egg [cite: 51, 128]
     if Settings.AutoEgg then
         local inp = getNil("InputObject", "InputObject")
         if inp then
@@ -248,21 +217,17 @@ local function MiscLoop()
             if Settings.AutoMultiEgg then FireRemote({[1] = "Gacha Multi", [2] = {[1] = inp, [2] = 0}}) end
         end
     end
-    
-    [cite_start]-- Roll [cite: 52]
     if Settings.AutoRoll then
         FireRemote({[1] = "Crate Roll Start", [2] = {[1] = Settings.SelectedGacha, [2] = true}})
         task.wait(1.5)
         FireRemote({[1] = "Crate Roll Stop"})
     end
-    
-    [cite_start]-- Stats [cite: 53]
     if Settings.AutoStats then
         FireRemote({[1] = "Distribute Stat Point", [2] = {[1] = Settings.SelectedStat}})
     end
 end
 
-[cite_start]local function Teleport(zone) -- [cite: 54, 118]
+local function Teleport(zone)
     local map = "Dungeon"
     if zone == "Zone 2" then map = "Naruto" end
     if zone == "Zone 3" then map = "DragonBall" end
@@ -271,297 +236,170 @@ end
     FireRemote({[1] = "Zone Teleport", [2] = {[1] = map}})
 end
 
--- // UI LIBRARY // --
+-- // DELTA COMPATIBLE UI // --
 local Library = {}
 local UIVars = {
-    Colors = {
-        Main = Color3.fromRGB(18, 18, 22),
-        Sec = Color3.fromRGB(25, 25, 30),
-        Accent = Color3.fromRGB(0, 140, 255),
-        Text = Color3.fromRGB(255, 255, 255),
-        Gray = Color3.fromRGB(150, 150, 150)
-    }
+    Colors = { Main = Color3.fromRGB(18,18,22), Sec = Color3.fromRGB(25,25,30), Accent = Color3.fromRGB(0,140,255), Text = Color3.fromRGB(255,255,255) }
 }
 
 function Library:Init(title)
-    if CoreGui:FindFirstChild("HimonoPlatinum") then CoreGui.HimonoPlatinum:Destroy() end
+    -- Use PlayerGui for Delta Compatibility
     local GUI = Instance.new("ScreenGui")
-    GUI.Name = "HimonoPlatinum"
-    GUI.Parent = CoreGui
+    GUI.Name = "HimonoDelta"
+    GUI.Parent = PlayerGui 
+    GUI.ResetOnSpawn = false
+    
+    -- Toggle Button (Mini)
+    local ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Name = "ToggleUI"
+    ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+    ToggleBtn.Position = UDim2.new(0.8, 0, 0.1, 0)
+    ToggleBtn.BackgroundColor3 = UIVars.Colors.Accent
+    ToggleBtn.Text = "H"
+    ToggleBtn.TextColor3 = UIVars.Colors.Text
+    ToggleBtn.Font = Enum.Font.GothamBold
+    ToggleBtn.TextSize = 20
+    ToggleBtn.Parent = GUI
+    Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1,0)
     
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 550, 0, 380)
-    Main.Position = UDim2.new(0.5, -275, 0.5, -190)
+    Main.Size = UDim2.new(0, 500, 0, 350)
+    Main.Position = UDim2.new(0.5, -250, 0.5, -175)
     Main.BackgroundColor3 = UIVars.Colors.Main
     Main.Parent = GUI
     Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 6)
     
-    local Top = Instance.new("Frame")
-    Top.Size = UDim2.new(1, 0, 0, 30)
-    Top.BackgroundColor3 = UIVars.Colors.Sec
-    Top.Parent = Main
-    Instance.new("UICorner", Top).CornerRadius = UDim.new(0, 6)
-    
-    local Title = Instance.new("TextLabel")
-    Title.Text = title
-    Title.Size = UDim2.new(1, -20, 1, 0)
-    Title.Position = UDim2.new(0, 10, 0, 0)
-    Title.BackgroundTransparency = 1
-    Title.TextColor3 = UIVars.Colors.Text
-    Title.Font = Enum.Font.GothamBold
-    Title.TextSize = 12
-    Title.TextXAlignment = Enum.TextXAlignment.Left
-    Title.Parent = Top
-
-    -- Notify System
-    local NotifContainer = Instance.new("Frame")
-    NotifContainer.Size = UDim2.new(0, 200, 1, 0)
-    NotifContainer.Position = UDim2.new(1, -210, 0.1, 0)
-    NotifContainer.BackgroundTransparency = 1
-    NotifContainer.Parent = GUI
-    
-    local NotifLayout = Instance.new("UIListLayout")
-    NotifLayout.Padding = UDim.new(0, 5)
-    NotifLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-    NotifLayout.Parent = NotifContainer
-    
-    NotifyFunc = function(msg, duration)
-        local N = Instance.new("Frame")
-        N.Size = UDim2.new(1, 0, 0, 30)
-        N.BackgroundColor3 = UIVars.Colors.Sec
-        N.Parent = NotifContainer
-        Instance.new("UICorner", N).CornerRadius = UDim.new(0, 4)
-        
-        local L = Instance.new("TextLabel")
-        L.Size = UDim2.new(1, 0, 1, 0)
-        L.BackgroundTransparency = 1
-        L.Text = msg
-        L.TextColor3 = UIVars.Colors.Accent
-        L.Font = Enum.Font.Gotham
-        L.TextSize = 11
-        L.Parent = N
-        
-        task.delay(duration or 2, function() N:Destroy() end)
-    end
-
-    -- Dragging
+    -- Drag
     local dragging, dragStart, startPos
-    Top.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; dragStart=i.Position; startPos=Main.Position end end)
-    Top.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+    Main.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; dragStart=i.Position; startPos=Main.Position end end)
+    Main.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
     UserInputService.InputChanged:Connect(function(i) if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then local d=i.Position-dragStart; Main.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y) end end)
 
-    local TabContainer = Instance.new("ScrollingFrame")
-    TabContainer.Size = UDim2.new(0, 110, 1, -40)
-    TabContainer.Position = UDim2.new(0, 5, 0, 35)
-    TabContainer.BackgroundTransparency = 1
-    TabContainer.ScrollBarThickness = 2
-    TabContainer.Parent = Main
-    Instance.new("UIListLayout", TabContainer).Padding = UDim.new(0, 4)
+    ToggleBtn.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
 
-    local PageContainer = Instance.new("Frame")
-    PageContainer.Size = UDim2.new(1, -125, 1, -40)
-    PageContainer.Position = UDim2.new(0, 120, 0, 35)
-    PageContainer.BackgroundColor3 = UIVars.Colors.Sec
-    PageContainer.Parent = Main
-    Instance.new("UICorner", PageContainer).CornerRadius = UDim.new(0, 4)
-    
-    return {TabC = TabContainer, PageC = PageContainer}
+    local Top = Instance.new("Frame")
+    Top.Size = UDim2.new(1,0,0,30); Top.BackgroundColor3 = UIVars.Colors.Sec; Top.Parent = Main
+    Instance.new("UICorner", Top).CornerRadius = UDim.new(0,6)
+    local Txt = Instance.new("TextLabel"); Txt.Text=title; Txt.Size=UDim2.new(1,-10,1,0); Txt.Position=UDim2.new(0,10,0,0); Txt.BackgroundTransparency=1; Txt.TextColor3=UIVars.Colors.Text; Txt.Font=Enum.Font.GothamBold; Txt.TextXAlignment=Enum.TextXAlignment.Left; Txt.Parent=Top
+
+    local TabC = Instance.new("ScrollingFrame"); TabC.Size=UDim2.new(0,100,1,-35); TabC.Position=UDim2.new(0,5,0,35); TabC.BackgroundTransparency=1; TabC.Parent=Main
+    Instance.new("UIListLayout", TabC).Padding = UDim.new(0,5)
+    local PageC = Instance.new("Frame"); PageC.Size=UDim2.new(1,-115,1,-35); PageC.Position=UDim2.new(0,110,0,35); PageC.BackgroundColor3=UIVars.Colors.Sec; PageC.Parent=Main
+    Instance.new("UICorner", PageC).CornerRadius = UDim.new(0,4)
+
+    return {TabC=TabC, PageC=PageC}
 end
 
 function Library:Tab(win, name)
     local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(1, -5, 0, 28)
-    Btn.BackgroundColor3 = UIVars.Colors.Sec
-    Btn.Text = name
-    Btn.TextColor3 = UIVars.Colors.Gray
-    Btn.Font = Enum.Font.GothamBold
-    Btn.TextSize = 11
-    Btn.Parent = win.TabC
-    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 4)
-    
-    local Page = Instance.new("ScrollingFrame")
-    Page.Size = UDim2.new(1, -10, 1, -10)
-    Page.Position = UDim2.new(0, 5, 0, 5)
-    Page.BackgroundTransparency = 1
-    Page.Visible = false
-    Page.ScrollBarThickness = 2
-    Page.Parent = win.PageC
-    local Layout = Instance.new("UIListLayout")
-    Layout.Padding = UDim.new(0, 5)
-    Layout.Parent = Page
-    Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() Page.CanvasSize = UDim2.new(0,0,0,Layout.AbsoluteContentSize.Y+10) end)
-    
+    Btn.Size=UDim2.new(1,-5,0,25); Btn.BackgroundColor3=UIVars.Colors.Sec; Btn.Text=name; Btn.TextColor3=UIVars.Colors.Text; Btn.Font=Enum.Font.GothamBold; Btn.TextSize=11; Btn.Parent=win.TabC
+    Instance.new("UICorner", Btn).CornerRadius=UDim.new(0,4)
+    local Page = Instance.new("ScrollingFrame"); Page.Size=UDim2.new(1,-10,1,-10); Page.Position=UDim2.new(0,5,0,5); Page.BackgroundTransparency=1; Page.Visible=false; Page.Parent=win.PageC
+    local L = Instance.new("UIListLayout"); L.Padding=UDim.new(0,5); L.Parent=Page
+    L:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() Page.CanvasSize=UDim2.new(0,0,0,L.AbsoluteContentSize.Y+10) end)
     Btn.MouseButton1Click:Connect(function()
-        for _,v in pairs(win.TabC:GetChildren()) do if v:IsA("TextButton") then v.BackgroundColor3=UIVars.Colors.Sec; v.TextColor3=UIVars.Colors.Gray end end
+        for _,v in pairs(win.TabC:GetChildren()) do if v:IsA("TextButton") then v.BackgroundColor3=UIVars.Colors.Sec end end
         for _,v in pairs(win.PageC:GetChildren()) do v.Visible=false end
-        Btn.BackgroundColor3 = UIVars.Colors.Accent
-        Btn.TextColor3 = UIVars.Colors.Text
-        Page.Visible = true
+        Btn.BackgroundColor3=UIVars.Colors.Accent; Page.Visible=true
     end)
     return Page
 end
 
 function Library:Toggle(page, text, flag, callback)
-    local F = Instance.new("Frame")
-    F.Size = UDim2.new(1, 0, 0, 30)
-    F.BackgroundTransparency = 1
-    F.Parent = page
-    
-    local B = Instance.new("TextButton")
-    B.Size = UDim2.new(1, 0, 1, 0)
-    B.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-    B.Text = "  " .. text
-    B.TextColor3 = UIVars.Colors.Text
-    B.Font = Enum.Font.Gotham
-    B.TextSize = 11
-    B.TextXAlignment = Enum.TextXAlignment.Left
-    B.Parent = F
-    Instance.new("UICorner", B).CornerRadius = UDim.new(0, 4)
-    
-    local Ind = Instance.new("Frame")
-    Ind.Size = UDim2.new(0, 8, 0, 8)
-    Ind.Position = UDim2.new(1, -15, 0.5, -4)
-    Ind.BackgroundColor3 = Settings[flag] and UIVars.Colors.Accent or UIVars.Colors.Danger
-    Ind.Parent = B
-    Instance.new("UICorner", Ind).CornerRadius = UDim.new(1, 0)
-    
-    B.MouseButton1Click:Connect(function()
-        Settings[flag] = not Settings[flag]
-        Ind.BackgroundColor3 = Settings[flag] and UIVars.Colors.Accent or UIVars.Colors.Danger
-        if callback then callback(Settings[flag]) end
-        SaveSystem()
-    end)
+    local B = Instance.new("TextButton"); B.Size=UDim2.new(1,0,0,30); B.BackgroundColor3=Color3.fromRGB(35,35,40); B.Text="  "..text; B.TextColor3=UIVars.Colors.Text; B.Font=Enum.Font.Gotham; B.TextSize=11; B.TextXAlignment=Enum.TextXAlignment.Left; B.Parent=page
+    Instance.new("UICorner", B).CornerRadius=UDim.new(0,4)
+    local I = Instance.new("Frame"); I.Size=UDim2.new(0,8,0,8); I.Position=UDim2.new(1,-15,0.5,-4); I.Parent=B; Instance.new("UICorner", I).CornerRadius=UDim.new(1,0)
+    local function Update() I.BackgroundColor3 = Settings[flag] and UIVars.Colors.Accent or UIVars.Colors.Danger end
+    Update()
+    B.MouseButton1Click:Connect(function() Settings[flag]=not Settings[flag]; Update(); if callback then callback(Settings[flag]) end SaveSystem() end)
 end
 
 function Library:Dropdown(page, text, list, flag, callback)
-    local F = Instance.new("Frame")
-    F.Size = UDim2.new(1, 0, 0, 35)
-    F.BackgroundTransparency = 1
-    F.Parent = page
-    
-    local B = Instance.new("TextButton")
-    B.Size = UDim2.new(1, 0, 1, 0)
-    B.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-    B.Text = "  " .. text .. ": " .. tostring(Settings[flag] or list[1])
-    B.TextColor3 = UIVars.Colors.Text
-    B.Font = Enum.Font.Gotham
-    B.TextSize = 11
-    B.TextXAlignment = Enum.TextXAlignment.Left
-    B.Parent = F
-    Instance.new("UICorner", B).CornerRadius = UDim.new(0, 4)
-    
+    local B = Instance.new("TextButton"); B.Size=UDim2.new(1,0,0,30); B.BackgroundColor3=Color3.fromRGB(35,35,40); B.TextColor3=UIVars.Colors.Text; B.Font=Enum.Font.Gotham; B.TextSize=11; B.TextXAlignment=Enum.TextXAlignment.Left; B.Parent=page
+    Instance.new("UICorner", B).CornerRadius=UDim.new(0,4)
+    local function Update() B.Text = "  "..text..": "..tostring(Settings[flag] or list[1]) end
+    Update()
     B.MouseButton1Click:Connect(function()
-        local current = Settings[flag] or list[1]
-        local idx = table.find(list, current) or 0
-        if idx >= #list then idx = 0 end
-        local nextVal = list[idx + 1]
-        Settings[flag] = nextVal
-        B.Text = "  " .. text .. ": " .. tostring(nextVal)
-        if callback then callback(nextVal) end
-        SaveSystem()
+        local cur = Settings[flag] or list[1]; local idx = table.find(list, cur) or 0
+        if idx >= #list then idx=0 end
+        Settings[flag] = list[idx+1]; Update(); if callback then callback(Settings[flag]) end SaveSystem()
     end)
 end
 
-function Library:Box(page, placeholder, callback)
-    local Box = Instance.new("TextBox")
-    Box.Size = UDim2.new(1, 0, 0, 30)
-    Box.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-    Box.PlaceholderText = placeholder
-    Box.Text = ""
-    Box.TextColor3 = UIVars.Colors.Text
-    Box.Font = Enum.Font.Gotham
-    Box.TextSize = 11
-    Box.Parent = page
-    Instance.new("UICorner", Box).CornerRadius = UDim.new(0, 4)
-    Box.FocusLost:Connect(function(enter)
-        if enter then callback(Box.Text); Box.Text="" end
-    end)
+function Library:Box(page, ph, callback)
+    local Box = Instance.new("TextBox"); Box.Size=UDim2.new(1,0,0,30); Box.BackgroundColor3=Color3.fromRGB(35,35,40); Box.Text=""; Box.PlaceholderText=ph; Box.TextColor3=UIVars.Colors.Text; Box.Font=Enum.Font.Gotham; Box.TextSize=11; Box.Parent=page
+    Instance.new("UICorner", Box).CornerRadius=UDim.new(0,4)
+    Box.FocusLost:Connect(function(enter) if enter then callback(Box.Text); Box.Text="" end end)
 end
 
-function Library:Label(page, text)
-    local L = Instance.new("TextLabel")
-    L.Size = UDim2.new(1, 0, 0, 20)
-    L.BackgroundTransparency = 1
-    L.Text = text
-    L.TextColor3 = UIVars.Colors.Accent
-    L.Font = Enum.Font.GothamBold
-    L.TextSize = 11
-    L.Parent = page
+function Library:Label(page, txt)
+    local L = Instance.new("TextLabel"); L.Size=UDim2.new(1,0,0,20); L.BackgroundTransparency=1; L.Text=txt; L.TextColor3=UIVars.Colors.Accent; L.Font=Enum.Font.GothamBold; L.TextSize=11; L.Parent=page
 end
 
 -- // BUILD UI // --
-local Win = Library:Init("Himono Hub v5.1 - Platinum")
+local Win = Library:Init("Himono Hub v5.2 [Delta]")
 
-local MainTab = Library:Tab(Win, "Main")
-Library:Toggle(MainTab, "Auto Attack", "AutoAttack", nil)
-Library:Toggle(MainTab, "Auto Collect", "AutoCollect", nil)
-Library:Toggle(MainTab, "Anti-AFK", "AntiAFK", nil)
+local Main = Library:Tab(Win, "Main")
+Library:Toggle(Main, "Auto Attack", "AutoAttack")
+Library:Toggle(Main, "Auto Collect", "AutoCollect")
+Library:Toggle(Main, "Anti-AFK", "AntiAFK")
 
-local FarmTab = Library:Tab(Win, "Farm")
-Library:Toggle(FarmTab, "Enable Farm", "AutoFarm", nil)
-Library:Dropdown(FarmTab, "Mode", {"Over", "Behind", "Under"}, "FarmMethod", nil)
-Library:Label(FarmTab, "Quick Select:")
+local Farm = Library:Tab(Win, "Farm")
+Library:Toggle(Farm, "Enable Farm", "AutoFarm")
+Library:Dropdown(Farm, "Method", {"Over", "Behind", "Under"}, "FarmMethod")
+Library:Label(Farm, "Mobs:")
 local Mobs = {"Thug", "Ninja", "Pirate", "Marine", "Demon", "Boss", "Bandit"}
-for _, m in pairs(Mobs) do
-    Library:Toggle(FarmTab, "Mob: "..m, "Mob_"..m, function(v)
+for _,m in pairs(Mobs) do
+    Library:Toggle(Farm, "Mob: "..m, "Mob_"..m, function(v)
         if v then table.insert(Settings.SelectedMobs, m)
         else for i,n in ipairs(Settings.SelectedMobs) do if n==m then table.remove(Settings.SelectedMobs, i) end end end
     end)
 end
 
-local DungTab = Library:Tab(Win, "Dungeon")
-Library:Label(DungTab, "System: Auto Return Included")
-Library:Dropdown(DungTab, "Difficulty", {"Easy", "Medium", "Hard"}, "DungeonMode", nil)
-Library:Toggle(DungTab, "Auto Join Dungeon", "AutoJoinDungeon", nil)
-Library:Toggle(DungTab, "Auto Join Raid", "AutoJoinRaid", nil)
-Library:Toggle(DungTab, "Auto Farm (Kill All)", "AutoFarmDungeon", nil)
+local Dung = Library:Tab(Win, "Dungeon")
+Library:Dropdown(Dung, "Mode", {"Easy", "Medium", "Hard"}, "DungeonMode")
+Library:Toggle(Dung, "Auto Join Dungeon", "AutoJoinDungeon")
+Library:Toggle(Dung, "Auto Join Raid", "AutoJoinRaid")
+Library:Toggle(Dung, "Auto Farm (Kill All)", "AutoFarmDungeon")
 
-local ExtraTab = Library:Tab(Win, "Extra")
-Library:Toggle(ExtraTab, "Auto Egg", "AutoEgg", nil)
-Library:Toggle(ExtraTab, "Multi Open", "AutoMultiEgg", nil)
-Library:Dropdown(ExtraTab, "Crate", {"Biju", "Sayajin", "Race", "Haki", "Fruits"}, "SelectedGacha", nil)
-Library:Toggle(ExtraTab, "Auto Roll", "AutoRoll", nil)
-Library:Toggle(ExtraTab, "Auto Stats", "AutoStats", nil)
-Library:Dropdown(ExtraTab, "Stat", {"Mastery", "Damage", "Luck", "Yen"}, "SelectedStat", nil)
+local Extra = Library:Tab(Win, "Extra")
+Library:Toggle(Extra, "Auto Egg", "AutoEgg")
+Library:Toggle(Extra, "Multi Egg", "AutoMultiEgg")
+Library:Dropdown(Extra, "Crate", {"Biju", "Sayajin", "Race", "Haki", "Fruits"}, "SelectedGacha")
+Library:Toggle(Extra, "Auto Roll", "AutoRoll")
+Library:Toggle(Extra, "Auto Stats", "AutoStats")
+Library:Dropdown(Extra, "Stat", {"Mastery", "Damage", "Luck", "Yen"}, "SelectedStat")
 
-local ConfigTab = Library:Tab(Win, "Config/Perf")
-Library:Label(ConfigTab, "Performance")
-Library:Toggle(ConfigTab, "FPS Boost", "FPSBoost", UpdatePerformance)
-Library:Toggle(ConfigTab, "White Screen", "WhiteScreen", UpdatePerformance)
-Library:Label(ConfigTab, "Profiles")
-Library:Box(ConfigTab, "New Profile Name...", function(t) ProfileName = t; NotifyFunc("Selected: "..t, 2) end)
-Library:Dropdown(ConfigTab, "Select Profile", (function() local t={} for k,_ in pairs(ConfigData.Profiles) do table.insert(t,k) end return t end)(), "ProfileSelect", function(v) 
-    ProfileName = v
-    LoadSystem()
-end)
-Library:Toggle(ConfigTab, "Save Settings", "DummySave", function() SaveSystem() end)
+local Conf = Library:Tab(Win, "System")
+Library:Toggle(Conf, "FPS Boost", "FPSBoost", UpdatePerformance)
+Library:Toggle(Conf, "White Screen", "WhiteScreen", UpdatePerformance)
+Library:Label(Conf, "Profile Manager")
+Library:Box(Conf, "Create/Select Profile...", function(t) ProfileName=t; LoadSystem() end)
+Library:Dropdown(Conf, "Saved Profiles", (function() local t={} if ConfigData then for k,_ in pairs(ConfigData.Profiles) do table.insert(t,k) end end return t end)(), "Dummy", function(v) ProfileName=v; LoadSystem() end)
+Library:Toggle(Conf, "Force Save Config", "DummySave", function() SaveSystem() end)
 
--- // LOOPS // --
+-- // INIT // --
+LoadSystem()
 RunService.Heartbeat:Connect(FarmLoop)
 task.spawn(function()
-    LoadSystem() -- Auto Load on Start
     while task.wait(1) do
         DungeonLoop()
         MiscLoop()
-        -- Collect
-        if Settings.AutoCollect then
+        if Settings.AutoCollect and LocalPlayer.Character then
             for _,v in pairs(Workspace:GetDescendants()) do
-                if (v.Name:find("Drop") or v.Name:find("Coin")) and LocalPlayer.Character then
-                     if (LocalPlayer.Character.HumanoidRootPart.Position - v.Position).Magnitude < 30 then
-                        FireRemote({[1]="Collect", [2]=v})
-                     end
+                if (v.Name:find("Drop") or v.Name:find("Coin")) and (LocalPlayer.Character.HumanoidRootPart.Position - v.Position).Magnitude < 30 then
+                    FireRemote({[1]="Collect", [2]=v})
                 end
             end
         end
     end
 end)
 
--- Anti-AFK
+-- Anti-AFK (Delta Safe)
 LocalPlayer.Idled:Connect(function()
     if Settings.AntiAFK then
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Unknown, false, game)
     end
 end)
 
-NotifyFunc("Himono Hub v5.1 Loaded", 3)
+Notify("Himono Hub v5.2 Loaded!")
