@@ -1,4 +1,4 @@
--- Himono Hub v4.6 - COMPLETE FIXED VERSION
+-- Himono Hub v4.6 - SIMPLE AUTO EGG VERSION
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -504,7 +504,7 @@ local function DistributeStat(statName)
     SafeFireRemote(args)
 end
 
--- FIXED: EGG SYSTEM với tất cả remote từ file của bạn
+-- FIXED: SIMPLE AUTO EGG ON/OFF
 local function StartAutoEgg()
     local function getNil(name, class)
         for _, v in next, getnilinstances() do
@@ -865,7 +865,7 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "⚡ HIMONO HUB v4.6 - COMPLETE FIXED"
+Title.Text = "⚡ HIMONO HUB v4.6 - SIMPLE AUTO EGG"
 Title.TextColor3 = ColorTheme.Text
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
@@ -1252,7 +1252,7 @@ local mainContent = tabFrames["🏠 MAIN"]
 local mainStatus = Instance.new("TextLabel")
 mainStatus.Size = UDim2.new(1, -20, 0, 40)
 mainStatus.BackgroundTransparency = 1
-mainStatus.Text = "⚡ COMPLETE FIXED - All systems working!"
+mainStatus.Text = "⚡ SIMPLE AUTO EGG - Bật/tắt đơn giản!"
 mainStatus.TextColor3 = ColorTheme.Text
 mainStatus.Font = Enum.Font.Gotham
 mainStatus.TextSize = 14
@@ -1491,7 +1491,7 @@ local teleportBtn = CreateActionButton("Teleport", "Di chuyển đến khu vực
 end)
 teleportBtn.Parent = teleportContent
 
--- OPEN EGG TAB - FIXED với tất cả remote
+-- OPEN EGG TAB - SIMPLE ON/OFF
 local eggContent = tabFrames["🥚 OPEN EGG"]
 
 local multiEggBtn = CreateActionButton("Multi Egg (R)", "Mở Multi Egg (Nút R)", function()
@@ -1500,40 +1500,23 @@ local multiEggBtn = CreateActionButton("Multi Egg (R)", "Mở Multi Egg (Nút R)
 end)
 multiEggBtn.Parent = eggContent
 
-local startAutoEggBtn = CreateActionButton("Start Auto Egg (E)", "Bắt đầu Auto Egg", function()
-    StartAutoEgg()
-    mainStatus.Text = "🔮 Đã bắt đầu Auto Egg"
-end)
-startAutoEggBtn.Parent = eggContent
-
-local stopAutoEggBtn = CreateActionButton("Stop Auto Egg (Q)", "Dừng Auto Egg", function()
-    StopAutoEgg()
-    mainStatus.Text = "🔮 Đã dừng Auto Egg"
-end)
-stopAutoEggBtn.Parent = eggContent
-
-autoEggToggleFrame = CreateToggleSwitch("Enable Auto Egg Loop", "Tự động bật/tắt Auto Egg mỗi 30s", false, function(enabled)
+-- SIMPLE AUTO EGG TOGGLE - CHỈ 1 NÚT ON/OFF
+autoEggToggleFrame = CreateToggleSwitch("Enable Auto Egg", "Bật/tắt Auto Egg đơn giản", false, function(enabled)
     autoEggEnabled = enabled
     if enabled then
-        StartLoop("AutoEggLoop", function()
-            StartAutoEgg()
-            task.wait(25)
-            StopAutoEgg()
-            task.wait(5)
-        end, 30)
-        mainStatus.Text = "🔮 Auto Egg Loop: Đã bật"
+        StartAutoEgg()
+        mainStatus.Text = "🔮 Auto Egg: Đã BẬT - Đang roll egg tự động!"
     else
-        StopLoop("AutoEggLoop")
         StopAutoEgg()
-        mainStatus.Text = "🔮 Auto Egg Loop: Đã tắt"
+        mainStatus.Text = "🔮 Auto Egg: Đã TẮT"
     end
 end)
 autoEggToggleFrame.Parent = eggContent
 
 local eggInfo = Instance.new("TextLabel")
-eggInfo.Size = UDim2.new(1, -20, 0, 60)
+eggInfo.Size = UDim2.new(1, -20, 0, 40)
 eggInfo.BackgroundTransparency = 1
-eggInfo.Text = "💡 Hướng dẫn:\n• Multi Egg (R): Mở egg bằng nút R\n• Start Auto Egg (E): Bật auto roll\n• Stop Auto Egg (Q): Tắt auto roll\n• Auto Egg Loop: Tự động bật/tắt mỗi 30s"
+eggInfo.Text = "💡 Chỉ cần bật/tắt nút trên để auto egg!"
 eggInfo.TextColor3 = ColorTheme.TextSecondary
 eggInfo.Font = Enum.Font.Gotham
 eggInfo.TextSize = 11
@@ -1825,12 +1808,7 @@ local function ApplyLoadedConfig()
     if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
     if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
     if autoEggEnabled then 
-        StartLoop("AutoEggLoop", function()
-            StartAutoEgg()
-            task.wait(25)
-            StopAutoEgg()
-            task.wait(5)
-        end, 30)
+        StartAutoEgg()
     end
     if autoFarmDungeonEnabled then 
         StartLoop("FarmDungeon", FarmDungeonLogic, 0.3) 
@@ -1912,11 +1890,11 @@ else
     ApplyLoadedConfig()
 end
 
-print("⚡ HIMONO HUB v4.6 - COMPLETE FIXED VERSION LOADED!")
+print("⚡ HIMONO HUB v4.6 - SIMPLE AUTO EGG VERSION LOADED!")
+print("🔮 Auto Egg: 1 nút ON/OFF đơn giản")
 print("🎯 Auto Farm Selected: Hoạt động")
 print("🏰 Dungeon System: Join + Farm + Return hoạt động")
 print("⚔️ Raid System: Join + Farm + Return hoạt động") 
-print("🥚 Egg System: Multi Egg + Auto Egg hoạt động")
 print("⚡ Auto Stat: Hoạt động")
 print("💰 Auto Collect: Hoạt động")
 print("👻 Stealth Mode: Hoạt động")
