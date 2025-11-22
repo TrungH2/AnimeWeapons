@@ -40,14 +40,14 @@ local autoCollectEnabled = false
 local stealthModeEnabled = true
 local antiAFKEnabled = true
 
--- Config file paths - ĐÃ ĐỔI TÊN FOLDER VÀ FILE THÀNH TÊN CHUNG CHUNG
-local configFolder = "DataCache/"
+-- Config file paths - ĐÃ ĐỔI TÊN FOLDER THÀNH Himonohubver2
+local configFolder = "Himonohubver2/"
 local configFile = configFolder .. "GameSettings.json"
 local profilesFile = configFolder .. "UserProfiles.json"
 
 -- Tạo folder nếu chưa tồn tại
-if not isfolder("DataCache") then
-    makefolder("DataCache")
+if not isfolder("Himonohubver2") then
+    makefolder("Himonohubver2")
 end
 
 -- Khởi tạo random seed một lần duy nhất
@@ -226,7 +226,7 @@ local function GetEnemyGroups()
     return groups
 end
 
--- Auto farm logic (Vòng Lặp Mục Tiêu Tốc Độ Cao) - ĐÃ GIẢM TẦN SUẤT TELEPORT
+-- Auto farm logic (Vòng Lặp Mục Tiêu Tốc Độ Cao) - GIỮ NGUYÊN 0.1s
 local function FarmSelectedLogic()
     if #selectedEnemyNames == 0 then return end
     
@@ -257,7 +257,7 @@ local function FarmSelectedLogic()
         
         if target.Model and target.Model:FindFirstChild("Humanoid") and target.Model.Humanoid.Health > 0 then
             
-            -- Teleport đến mục tiêu (sử dụng offset ngẫu nhiên lớn hơn và ít thường xuyên hơn)
+            -- Teleport đến mục tiêu (sử dụng offset ngẫu nhiên lớn hơn)
             local offset = Vector3.new(
                 random:NextInteger(-15, 15) / 10,
                 3,
@@ -269,17 +269,17 @@ local function FarmSelectedLogic()
             if remote then 
                 -- Tấn công nhanh (burst attack)
                 SafeFire(remote, "Attack", target.Model)
-                task.wait(0.1) -- Tăng độ trễ giữa các lần tấn công
+                task.wait(0.05)
                 SafeFire(remote, "Attack", target.Model)
             end
         end
         
-        -- Độ trễ tăng lên trước khi chuyển sang mục tiêu tiếp theo
-        task.wait(0.3) 
+        -- Độ trễ ngắn trước khi chuyển sang mục tiêu tiếp theo - GIỮ NGUYÊN 0.1s
+        task.wait(0.1) 
     end
 end
 
--- NEW: Auto farm dungeon logic - ĐÃ GIẢM TẦN SUẤT TELEPORT
+-- NEW: Auto farm dungeon logic - GIỮ NGUYÊN TỐC ĐỘ
 local function FarmDungeonLogic()
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
@@ -309,11 +309,11 @@ local function FarmDungeonLogic()
                 local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Remote")
                 if remote then 
                     SafeFire(remote, "Attack", enemy.Model)
-                    task.wait(0.1) -- Tăng độ trễ
+                    task.wait(0.05)
                     SafeFire(remote, "Attack", enemy.Model)
                 end
                 
-                task.wait(0.3) -- Tăng độ trễ giữa các enemy
+                task.wait(0.1) -- GIỮ NGUYÊN độ trễ giữa các enemy
             end
         end
     else
@@ -449,7 +449,7 @@ local function AutoStatLogic()
     end
 end
 
--- Auto farm logic - ĐÃ GIẢM TẦN SUẤT
+-- Auto farm logic - GIỮ NGUYÊN TỐC ĐỘ
 local function AutoAttackLogic()
     local enemies = FindEnemiesInRange(50)
     if #enemies > 0 then
@@ -507,7 +507,7 @@ local function StartGacha(gachaType)
     local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
     if remote then
         SafeFire(remote, "Crate Roll Start", {[1]=gachaType,[2]=true})
-        task.wait(1.5) -- Tăng độ trễ
+        task.wait(1)
         SafeFire(remote, "Crate Roll Stop")
     end
 end
@@ -552,7 +552,7 @@ local function JoinDungeon(mode)
         -- Nếu auto farm dungeon được bật, bắt đầu farm sau khi join
         if autoFarmDungeonEnabled then
             task.wait(3) -- Chờ load dungeon
-            StartLoop("FarmDungeon", FarmDungeonLogic, 0.3) -- Giảm tần suất
+            StartLoop("FarmDungeon", FarmDungeonLogic, 0.2) -- GIỮ NGUYÊN tốc độ
         end
     end
 end
@@ -736,7 +736,7 @@ end
 
 -- GUI Initialization với theme mới
 local HimonoHub = Instance.new("ScreenGui")
-HimonoHub.Name = "GameUI"
+HimonoHub.Name = "HimonoHubDark"
 HimonoHub.ResetOnSpawn = false
 HimonoHub.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 HimonoHub.Parent = game.CoreGui
@@ -744,7 +744,7 @@ HimonoHub.Enabled = true
 
 -- MINI UI (Nút Neo) - Dark Theme
 local HimonoMini = Instance.new("ScreenGui")
-HimonoMini.Name = "GameUIMini"
+HimonoMini.Name = "HimonoHubMini"
 HimonoMini.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 HimonoMini.Enabled = false
 HimonoMini.Parent = game.CoreGui
@@ -823,7 +823,7 @@ TitleCorner.Parent = TitleBar
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -100, 1, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "⚡ GAME ASSISTANT v1.0"
+Title.Text = "⚡ HIMONO HUB v4.3 - DARK EDITION"
 Title.TextColor3 = ColorTheme.Text
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
@@ -1213,7 +1213,7 @@ local mainContent = tabFrames["🏠 MAIN"]
 local mainStatus = Instance.new("TextLabel")
 mainStatus.Size = UDim2.new(1, -20, 0, 40)
 mainStatus.BackgroundTransparency = 1
-mainStatus.Text = "⚡ GAME ASSISTANT - Tất cả tính năng đã sẵn sàng!"
+mainStatus.Text = "⚡ DARK EDITION - Tất cả tính năng đã sẵn sàng!"
 mainStatus.TextColor3 = ColorTheme.Text
 mainStatus.Font = Enum.Font.Gotham
 mainStatus.TextSize = 14
@@ -1225,28 +1225,28 @@ local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonTog
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
     autoAttackEnabled = enabled
-    if enabled then StartLoop("AutoAttack", AutoAttackLogic, 0.5) else StopLoop("AutoAttack") end -- Giảm tần suất
+    if enabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) else StopLoop("AutoAttack") end
 end)
 autoAttackToggleFrame.Parent = mainContent
 
 autoDropsToggleFrame = CreateToggleSwitch("Enable Auto Collect All Drops", "Tự động nhặt vật phẩm quanh bạn", false, function(enabled)
     autoCollectEnabled = enabled
-    if enabled then StartLoop("AutoCollect", AutoCollectLogic, 1.5) else StopLoop("AutoCollect") end -- Giảm tần suất
+    if enabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) else StopLoop("AutoCollect") end
 end)
 autoDropsToggleFrame.Parent = mainContent
 
 -- FARM TAB - DI CHUYỂN CÁC TÍNH NĂNG FARM VÀO ĐÂY
 local farmContent = tabFrames["🌾 FARM"]
 
-autoFarmSelectedToggleFrame = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên (SPEED: 0.3s)", false, function(enabled)
+autoFarmSelectedToggleFrame = CreateToggleSwitch("Enable Auto Farm Selected Enemies", "Tự động farm TẤT CẢ enemy cùng tên (SPEED: 0.1s)", false, function(enabled)
     selectedFarmEnabled = enabled
-    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.3) else StopLoop("FarmSelected") end -- Giảm tần suất
+    if enabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) else StopLoop("FarmSelected") end -- GIỮ NGUYÊN 0.1s
 end)
 autoFarmSelectedToggleFrame.Parent = farmContent
 
 autoFarmRandomToggleFrame = CreateToggleSwitch("Enable Farm Random Enemies", "Tự động farm ngẫu nhiên", false, function(enabled)
     farmRandomEnabled = enabled
-    if enabled then StartLoop("FarmRandom", FarmRandomLogic, 0.8) else StopLoop("FarmRandom") end -- Giảm tần suất
+    if enabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) else StopLoop("FarmRandom") end
 end)
 autoFarmRandomToggleFrame.Parent = farmContent
 
@@ -1372,7 +1372,7 @@ gachaCombo.Parent = gachaContent
 for _, gacha in ipairs(gachaTypes) do
     local toggle = CreateToggleSwitch("Enable Auto Roll " .. gacha, "Tự động roll " .. gacha, false, function(enabled)
         if enabled then
-            StartLoop("AutoRoll"..gacha, function() StartGacha(gacha) end, 3) -- Tăng độ trễ
+            StartLoop("AutoRoll"..gacha, function() StartGacha(gacha) end, 2)
         else
             StopLoop("AutoRoll"..gacha)
         end
@@ -1391,7 +1391,7 @@ statCombo.Parent = statsContent
 local autoStatToggleFrame = CreateToggleSwitch("Enable Auto Stat", "Tự động cộng điểm stat đã chọn", false, function(enabled)
     autoStatEnabled = enabled
     if enabled then 
-        StartLoop("AutoStat", AutoStatLogic, 2) -- Tăng độ trễ
+        StartLoop("AutoStat", AutoStatLogic, 1)
     else
         StopLoop("AutoStat")
     end
@@ -1426,7 +1426,7 @@ openEggBtn.Parent = eggContent
 autoOpenEggToggleFrame = CreateToggleSwitch("Enable Auto Open Egg", "Tự động mở egg khi gần (15m)", false, function(enabled)
     autoOpenEggEnabled = enabled
     if enabled then
-        StartLoop("AutoOpenEgg", AutoOpenEggLogic, 3) -- Tăng độ trễ
+        StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2)
     else
         StopLoop("AutoOpenEgg")
     end
@@ -1455,7 +1455,7 @@ dungeonModeCombo.Parent = dungeonContent
 local autoJoinDungeonToggle = CreateToggleSwitch("Enable Auto Join Dungeon", "Tự động join khi có thông báo dungeon open", false, function(enabled)
     autoJoinDungeonEnabled = enabled
     if enabled then
-        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 8) -- Giảm tần suất kiểm tra
+        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 5) -- Kiểm tra mỗi 5s
     else
         StopLoop("AutoJoinDungeon")
     end
@@ -1492,7 +1492,7 @@ raidSection.Parent = dungeonContent
 local autoJoinRaidToggle = CreateToggleSwitch("Enable Auto Join Raid", "Tự động join khi có thông báo raid open", false, function(enabled)
     autoJoinRaidEnabled = enabled
     if enabled then
-        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 8) -- Giảm tần suất kiểm tra
+        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 5) -- Kiểm tra mỗi 5s
     else
         StopLoop("AutoJoinRaid")
     end
@@ -1659,22 +1659,22 @@ local function ApplyLoadedConfig()
     StealthLabel.TextColor3 = stealthMode and ColorTheme.Success or ColorTheme.Danger
     
     -- Kích hoạt các vòng lặp nếu cần
-    if autoAttackEnabled then StartLoop("AutoAttack", AutoAttackLogic, 0.5) end
-    if selectedFarmEnabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.3) end
-    if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.8) end
-    if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.5) end
-    if autoOpenEggEnabled then StartLoop("AutoOpenEgg", AutoOpenEggLogic, 3) end
+    if autoAttackEnabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) end
+    if selectedFarmEnabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) end -- GIỮ NGUYÊN 0.1s
+    if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
+    if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
+    if autoOpenEggEnabled then StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2) end
     if autoFarmDungeonEnabled then 
-        StartLoop("FarmDungeon", FarmDungeonLogic, 0.3) 
+        StartLoop("FarmDungeon", FarmDungeonLogic, 0.2) 
     end
     if autoJoinDungeonEnabled then
-        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 8)
+        StartLoop("AutoJoinDungeon", AutoJoinDungeonLogic, 5)
     end
     if autoJoinRaidEnabled then
-        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 8)
+        StartLoop("AutoJoinRaid", AutoJoinRaidLogic, 5)
     end
     if autoStatEnabled then
-        StartLoop("AutoStat", AutoStatLogic, 2)
+        StartLoop("AutoStat", AutoStatLogic, 1)
     end
     if antiAFKEnabled then EnableAntiAFK() else DisableAntiAFK() end
     
@@ -1748,4 +1748,4 @@ else
     ApplyLoadedConfig()
 end
 
-print("⚡ GAME ASSISTANT v1.0 - ANTI-CHEAT OPTIMIZED LOADED!")
+print("⚡ HIMONO HUB v4.3 - DARK EDITION LOADED!")
