@@ -19,7 +19,6 @@ local selectedStat = "Mastery"
 local autoOpenEggEnabled = false
 local autoStatEnabled = false
 local autoHatchEggEnabled = false
-local hatchViaREnabled = false -- NEW: Hatch via R key
 
 -- NEW: Biến dungeon system
 local selectedDungeonMode = "Easy"
@@ -113,60 +112,18 @@ end
 -- NEW: Auto Join Dungeon Logic (Fire-and-Forget)
 local function AutoJoinDungeonLoop()
     if autoJoinDungeonEnabled then
-        JoinDungeon(selectedDungeonMode)
+        pcall(function()
+            JoinDungeon(selectedDungeonMode)
+        end)
     end
 end
 
 -- NEW: Auto Join Raid Logic (Fire-and-Forget)
 local function AutoJoinRaidLoop()
     if autoJoinRaidEnabled then
-        JoinRaid()
-    end
-end
-
--- NEW: Hatch Egg via R Key
-local function HatchEggViaR()
-    if hatchViaREnabled then
-        local remote = ReplicatedStorage:FindFirstChild("Reply") and ReplicatedStorage.Reply:FindFirstChild("Reliable")
-        if remote then
-            local function getNil(name, class)
-                for _, v in next, getnilinstances() do
-                    if v.ClassName == class and v.Name == name then
-                        return v
-                    end
-                end
-            end
-            
-            local args = {
-                [1] = "Gacha Multi",
-                [2] = {
-                    [1] = getNil("InputObject", "InputObject"),
-                    [2] = 0
-                }
-            }
-            
-            SafeFire(remote, unpack(args))
-        end
-    end
-end
-
--- Kết nối phím R
-local rKeyConnection
-local function EnableHatchViaR()
-    if rKeyConnection then
-        rKeyConnection:Disconnect()
-    end
-    rKeyConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if not gameProcessed and input.KeyCode == Enum.KeyCode.R and hatchViaREnabled then
-            HatchEggViaR()
-        end
-    end)
-end
-
-local function DisableHatchViaR()
-    if rKeyConnection then
-        rKeyConnection:Disconnect()
-        rKeyConnection = nil
+        pcall(function()
+            JoinRaid()
+        end)
     end
 end
 
@@ -581,7 +538,6 @@ local function SaveConfig()
         autoOpenEggEnabled = autoOpenEggEnabled,
         autoStatEnabled = autoStatEnabled,
         autoHatchEggEnabled = autoHatchEggEnabled,
-        hatchViaREnabled = hatchViaREnabled,
         stealthMode = stealthMode,
         
         -- Dungeon settings
@@ -616,7 +572,6 @@ local function LoadConfig(profileName)
         autoOpenEggEnabled = data.autoOpenEggEnabled or false
         autoStatEnabled = data.autoStatEnabled or false
         autoHatchEggEnabled = data.autoHatchEggEnabled or false
-        hatchViaREnabled = data.hatchViaREnabled or false
         stealthMode = data.stealthMode or true
         
         -- Dungeon settings
@@ -654,39 +609,6 @@ local function DeleteConfig(profileName)
     return false
 end
 
--- NEW: Tạo profile fastfarm
-local function CreateFastFarmProfile()
-    local profileName = "fastfarm"
-    
-    if not configProfiles[profileName] then
-        configProfiles[profileName] = {
-            selectedEnemyNames = {},
-            selectedGachaType = "Biju",
-            selectedZone = "Zone 1",
-            selectedStat = "Mastery",
-            autoOpenEggEnabled = false,
-            autoStatEnabled = false,
-            autoHatchEggEnabled = false,
-            hatchViaREnabled = false,
-            stealthMode = true,
-            selectedDungeonMode = "Easy",
-            autoFarmDungeonEnabled = false,
-            autoJoinDungeonEnabled = false,
-            autoJoinRaidEnabled = false,
-            selectedFarmEnabled = false,
-            autoAttackEnabled = false,
-            farmRandomEnabled = false,
-            autoCollectEnabled = false,
-            stealthModeEnabled = true,
-            antiAFKEnabled = true
-        }
-        
-        SaveProfiles()
-        return true
-    end
-    return false
-end
-
 local function CreateNewProfile(profileName)
     if not profileName or profileName == "" then return false end
     
@@ -699,7 +621,6 @@ local function CreateNewProfile(profileName)
             autoOpenEggEnabled = false,
             autoStatEnabled = false,
             autoHatchEggEnabled = false,
-            hatchViaREnabled = false,
             stealthMode = true,
             selectedDungeonMode = "Easy",
             autoFarmDungeonEnabled = false,
@@ -1216,7 +1137,7 @@ mainStatus.Parent = mainContent
 -- Biến lưu các toggle
 local autoAttackToggleFrame, autoFarmSelectedToggleFrame, autoFarmRandomToggleFrame, autoDropsToggleFrame
 local stealthToggleFrame, antiAfkToggleFrame, autoOpenEggToggleFrame, dungeonToggleFrame
-local autoJoinDungeonToggleFrame, autoJoinRaidToggleFrame, autoHatchEggToggleFrame, hatchViaRToggleFrame
+local autoJoinDungeonToggleFrame, autoJoinRaidToggleFrame, autoHatchEggToggleFrame
 
 autoAttackToggleFrame = CreateToggleSwitch("Enable Auto Attack", "Tự động tấn công kẻ địch gần nhất", false, function(enabled)
     autoAttackEnabled = enabled
@@ -1411,24 +1332,10 @@ local teleportBtn = CreateActionButton("Teleport", "Di chuyển đến khu vực
 end)
 teleportBtn.Parent = teleportContent
 
--- OPEN EGG TAB
+-- OPEN EGG TAB - ĐƠN GIẢN HÓA
 local eggContent = tabFrames["🥚 OPEN EGG"]
-local openEggBtn = CreateActionButton("Open Egg", "Mở egg gần bạn", function()
-    AutoOpenEggLogic()
-end)
-openEggBtn.Parent = eggContent
 
-autoOpenEggToggleFrame = CreateToggleSwitch("Enable Auto Open Egg", "Tự động mở egg khi gần (15m)", false, function(enabled)
-    autoOpenEggEnabled = enabled
-    if enabled then
-        StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2)
-    else
-        StopLoop("AutoOpenEgg")
-    end
-end)
-autoOpenEggToggleFrame.Parent = eggContent
-
--- NEW: Auto Hatch Egg Toggle (chỉ hiển thị khi hatch via R tắt)
+-- Chỉ giữ lại 1 toggle duy nhất
 autoHatchEggToggleFrame = CreateToggleSwitch("Enable Auto Hatch Egg", "Tự động hatch egg liên tục", false, function(enabled)
     autoHatchEggEnabled = enabled
     if enabled then
@@ -1438,26 +1345,6 @@ autoHatchEggToggleFrame = CreateToggleSwitch("Enable Auto Hatch Egg", "Tự đ�
     end
 end)
 autoHatchEggToggleFrame.Parent = eggContent
-
--- NEW: Hatch via R Toggle
-hatchViaRToggleFrame = CreateToggleSwitch("Hatch Egg (Enable via R)", "Bật hatch egg bằng phím R", false, function(enabled)
-    hatchViaREnabled = enabled
-    if enabled then
-        EnableHatchViaR()
-        -- Ẩn auto hatch egg khi bật hatch via R
-        autoHatchEggToggleFrame.Visible = false
-        if autoHatchEggEnabled then
-            StopLoop("AutoHatchEgg")
-            autoHatchEggEnabled = false
-            UpdateToggleButton(autoHatchEggToggleFrame, false)
-        end
-    else
-        DisableHatchViaR()
-        -- Hiển thị auto hatch egg khi tắt hatch via R
-        autoHatchEggToggleFrame.Visible = true
-    end
-end)
-hatchViaRToggleFrame.Parent = eggContent
 
 -- DUNGEON TAB
 local dungeonContent = tabFrames["🏰 DUNGEON"]
@@ -1543,21 +1430,9 @@ dungeonStatus.Parent = dungeonContent
 -- CONFIG TAB
 local configContent = tabFrames["💾 CONFIG"]
 
--- NEW: Fast Farm Button
-local createFastFarmBtn = CreateActionButton("Create FastFarm", "Tạo profile FastFarm mới", function()
-    if CreateFastFarmProfile() then
-        mainStatus.Text = "✅ Đã tạo profile: fastfarm"
-        selectedConfigProfile = "fastfarm"
-        UpdateProfileList()
-    else
-        mainStatus.Text = "❌ Profile fastfarm đã tồn tại!"
-    end
-end)
-createFastFarmBtn.Parent = configContent
-
 local profileNameInput = Instance.new("TextBox")
 profileNameInput.Size = UDim2.new(0.6, 0, 0, 35)
-profileNameInput.Position = UDim2.new(0, 10, 0, 70)
+profileNameInput.Position = UDim2.new(0, 10, 0, 10)
 profileNameInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
 profileNameInput.TextColor3 = ColorTheme.Text
 profileNameInput.PlaceholderText = "Nhập tên profile..."
@@ -1578,7 +1453,8 @@ local createProfileBtn = CreateActionButton("Create New Profile", "Tạo profile
             mainStatus.Text = "✅ Đã tạo profile: " .. profileName
             selectedConfigProfile = profileName
             SaveConfig()
-            UpdateProfileList()
+            RefreshProfileComboBox()
+            ApplyLoadedConfig()
         else
             mainStatus.Text = "❌ Profile đã tồn tại: " .. profileName
         end
@@ -1597,6 +1473,24 @@ local function GetProfileNames()
         end
     end
     return names
+end
+
+-- Hàm làm mới ComboBox profile
+local function RefreshProfileComboBox()
+    local profileNames = GetProfileNames()
+    
+    -- Tìm và cập nhật ComboBox
+    for _, child in pairs(configContent:GetChildren()) do
+        if child:IsA("Frame") and child:FindFirstChildOfClass("TextLabel") then
+            local label = child:FindFirstChildOfClass("TextLabel")
+            if label and label.Text == "Select Profile" then
+                local dropdown = child:FindFirstChildOfClass("TextButton")
+                if dropdown then
+                    dropdown.Text = selectedConfigProfile
+                end
+            end
+        end
+    end
 end
 
 local profileCombo = CreateComboBox("Select Profile", "Chọn profile để quản lý", GetProfileNames(), function(selected)
@@ -1627,7 +1521,7 @@ saveProfileBtn.Parent = configContent
 local deleteProfileBtn = CreateActionButton("Delete Profile", "Xóa profile đã chọn", function()
     if DeleteConfig(selectedConfigProfile) then
         mainStatus.Text = "🗑️ Đã xóa profile: " .. selectedConfigProfile
-        UpdateProfileList()
+        RefreshProfileComboBox()
     else
         mainStatus.Text = "❌ Không thể xóa profile: " .. selectedConfigProfile
     end
@@ -1642,23 +1536,6 @@ local autoLoadBtn = CreateActionButton("Set as Auto Load", "Tự động load pr
     end
 end)
 autoLoadBtn.Parent = configContent
-
--- Hàm cập nhật danh sách profile
-local function UpdateProfileList()
-    local profileNames = GetProfileNames()
-    
-    for _, child in pairs(configContent:GetChildren()) do
-        if child:IsA("Frame") and child:FindFirstChildOfClass("TextLabel") then
-            local label = child:FindFirstChildOfClass("TextLabel")
-            if label and label.Text == "Select Profile" then
-                local dropdown = child:FindFirstChildOfClass("TextButton")
-                if dropdown then
-                    dropdown.Text = selectedConfigProfile
-                end
-            end
-        end
-    end
-end
 
 -- SETTINGS TAB
 local settingsContent = tabFrames["⚙️ SETTINGS"]
@@ -1686,9 +1563,7 @@ local function ApplyLoadedConfig()
     UpdateToggleButton(autoDropsToggleFrame, autoCollectEnabled)
     UpdateToggleButton(stealthToggleFrame, stealthModeEnabled)
     UpdateToggleButton(antiAfkToggleFrame, antiAFKEnabled)
-    UpdateToggleButton(autoOpenEggToggleFrame, autoOpenEggEnabled)
     UpdateToggleButton(autoHatchEggToggleFrame, autoHatchEggEnabled)
-    UpdateToggleButton(hatchViaRToggleFrame, hatchViaREnabled)
     UpdateToggleButton(dungeonToggleFrame, autoFarmDungeonEnabled)
     UpdateToggleButton(autoJoinDungeonToggleFrame, autoJoinDungeonEnabled)
     UpdateToggleButton(autoJoinRaidToggleFrame, autoJoinRaidEnabled)
@@ -1699,26 +1574,12 @@ local function ApplyLoadedConfig()
     StealthLabel.Text = stealthMode and "STEALTH: ON" or "STEALTH: OFF"
     StealthLabel.TextColor3 = stealthMode and ColorTheme.Success or ColorTheme.Danger
     
-    -- Xử lý hatch via R
-    if hatchViaREnabled then
-        EnableHatchViaR()
-        autoHatchEggToggleFrame.Visible = false
-        if autoHatchEggEnabled then
-            StopLoop("AutoHatchEgg")
-            autoHatchEggEnabled = false
-        end
-    else
-        DisableHatchViaR()
-        autoHatchEggToggleFrame.Visible = true
-    end
-    
     -- Kích hoạt các vòng lặp nếu cần
     if autoAttackEnabled then StartLoop("AutoAttack", AutoAttackLogic, 0.3) end
     if selectedFarmEnabled then StartLoop("FarmSelected", FarmSelectedLogic, 0.1) end
     if farmRandomEnabled then StartLoop("FarmRandom", FarmRandomLogic, 0.5) end
     if autoCollectEnabled then StartLoop("AutoCollect", AutoCollectLogic, 1.0) end
-    if autoOpenEggEnabled then StartLoop("AutoOpenEgg", AutoOpenEggLogic, 2) end
-    if autoHatchEggEnabled and not hatchViaREnabled then StartLoop("AutoHatchEgg", AutoHatchEggLogic, 0.5) end
+    if autoHatchEggEnabled then StartLoop("AutoHatchEgg", AutoHatchEggLogic, 0.5) end
     if autoFarmDungeonEnabled then StartLoop("FarmDungeon", FarmDungeonLogic, 0.2) end
     if autoJoinDungeonEnabled then StartLoop("AutoJoinDungeon", AutoJoinDungeonLoop, 5) end
     if autoJoinRaidEnabled then StartLoop("AutoJoinRaid", AutoJoinRaidLoop, 5) end
@@ -1731,7 +1592,7 @@ local function ApplyLoadedConfig()
     end
     
     -- Cập nhật danh sách profile
-    UpdateProfileList()
+    RefreshProfileComboBox()
 end
 
 -- DRAG FUNCTIONALITY
